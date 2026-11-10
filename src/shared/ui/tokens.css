@@ -1,0 +1,56 @@
+/* Kinetic Obsidian — design tokens (Stitch, ADR-0001 D5)          */
+/* Source: stitch project 6928097282469008044 / kinetic_obsidian/  */
+/* Do not hardcode colors anywhere else — CI grep gate enforces.   */
+:root {
+  /* Semantic roles — the only colors components may use */
+  --accent-volt: #d4ff00; /* primary action, active set, completion */
+  --accent-teal: #00e5a3; /* AI telemetry, timers, recovery metrics */
+  --accent-amber: #ffb800; /* warnings, cardiac max, disclaimers */
+
+  --canvas: #0d1117; /* L0 structural void */
+  --surface: #161b22; /* L1 cards, exercise blocks */
+  --surface-lifted: #21262d; /* L2 active rows, chips, modals */
+  --edge: #30363d; /* hairline borders */
+  --text-high: #f0f6fc; /* headlines, metrics */
+  --text-muted: #8b949e; /* historical, labels, units */
+
+  /* Stitch full scale (reference; components use roles above) */
+  --srf-container-lowest: #0a0e14;
+  --srf-container-low: #181c22;
+  --srf-container: #1c2026;
+  --srf-container-high: #262a31;
+  --srf-container-highest: #31353c;
+  --surface-bright: #353940;
+  --on-surface: #dfe2eb;
+  --accent-teal-dim: #00e2a0;
+  --accent-amber-dim: #ffba20;
+  --accent-glow-volt: 0px 0px 16px rgba(212, 255, 0, 0.15);
+  --accent-glow-amber: 0px 0px 16px rgba(255, 184, 0, 0.15);
+
+  /* Typography */
+  --font-heading: "Space Grotesk", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", system-ui, sans-serif;
+  --font-metric: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Spacing (4px base) */
+  --sp-gutter: 1rem;
+  --sp-gutter-desktop: 1.5rem;
+  --sp-xs: 0.25rem;
+  --sp-sm: 0.5rem;
+  --sp-md: 1rem;
+  --sp-lg: 1.5rem;
+  --sp-xl: 2.5rem;
+
+  /* Radii (soft architectural) */
+  --r-card: 4px;
+  --r-btn: 8px;
+  --r-drawer: 12px;
+  --r-pill: 9999px;
+
+  /* Metric typography (weights/reps/RPE/timers — mono only) */
+  --metric-lg-size: 28px;
+  --metric-lg-weight: 600;
+  --metric-md-size: 18px;
+  --metric-md-weight: 500;
+  --label-caps: 600 11px/14px var(--font-metric);
+}
