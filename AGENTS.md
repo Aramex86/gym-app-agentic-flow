@@ -72,3 +72,27 @@ Never commit to main. Branches feat/<topic>, fix/<topic>. PR needs green lint+ty
 ## Do NOT touch
 
 package-lock.json / pnpm-lock.yaml by hand, index.html, vite.config.ts, eslint.config.mjs without explicit task.
+
+<!-- AGENT FLOW ROUTING (pipeline) — append to AGENTS.md -->
+
+## Agent flow (pipeline)
+
+The coding flow is: task file -> Planner -> [human gate Y/N] ->
+Developer -> Tester -> PR. Phases are routed by `pipeline.yaml`
+through `scripts/run-agent.mjs`:
+
+- planner -> kimi-k3.1 (writes docs/plans/X-plan.md)
+- developer -> glm-5.3-flash (implements in feat branch, tests same commit)
+- tester -> glm-5.3-flash (writes docs/plans/X-report.md, PASS/FAIL)
+
+Dispatch from chat (Copilot is the dispatcher, not the implementer):
+
+```bash
+node scripts/run-agent.mjs planner "task-id: plan-contract"
+#   with AGENT_IN=tasks/2026-11-10-plan-contract.md AGENT_OUT=docs/plans/2026-11-10-plan-contract-plan.md
+```
+
+Env: PIPELINE_CLI=opencode|claude · RUN_MODEL (override one run) ·
+OLLAMA_BASE_URL / OLLAMA_API_KEY (claude mode only).
+
+HARD RULES (unchanged): agents never push; merges to main by human only.
