@@ -1,5 +1,23 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap");
+
+@import "tailwindcss";
+
 @import "../shared/ui/tokens.css";
+
+@theme inline {
+  --color-volt: var(--accent-volt);
+  --color-teal: var(--accent-teal);
+  --color-amber: var(--accent-amber);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-lifted: var(--surface-lifted);
+  --color-edge: var(--edge);
+  --color-text-high: var(--text-high);
+  --color-text-muted: var(--text-muted);
+  --font-heading: var(--font-heading);
+  --font-metric: var(--font-metric);
+}
+
 body {
   background: var(--canvas);
   color: var(--text-high);
