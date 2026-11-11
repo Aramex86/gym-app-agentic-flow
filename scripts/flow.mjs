@@ -52,8 +52,18 @@ async function fixLoop() {
     if (/not committed|uncommitted|committed anywhere/i.test(readFileSync(report, 'utf8'))) {
       const st = spawnSync('git', ['status', '--porcelain']).stdout.toString().trim();
       if (st) {
-        console.error('\nHUMAN ACTION REQUIRED: the report blocker is uncommitted work.');
-        console.error('Auto-fix cannot commit (agents never commit). Commit the deliverables, then re-run: pnpm flow:fix');
+        const short = spawnSync('git', ['status', '--short']).stdout.toString().trim();
+        console.error('\n' + '='.repeat(62));
+        console.error('HUMAN STEP REQUIRED - the report says the work is uncommitted.');
+        console.error('=' .repeat(62));
+        console.error('Auto-fix cannot commit for you (agents never commit).');
+        console.error('\nFiles waiting in your working tree:\n');
+        console.error('  ' + short.replace(/\n/g, '\n  '));
+        console.error('\nYour move (scoped to the deliverables only, no infra noise):');
+        console.error('   1) git add <the task files listed above>');
+        console.error('   2) git commit -m "feat(<task>): <what was built> (tests in same commit)"');
+        console.error('   3) re-run:  pnpm flow:fix   <- it will skip the fix hop and just re-test');
+        console.error('='.repeat(62));
         process.exit(1);
       }
       skipDevHop = true;
