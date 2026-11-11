@@ -63,6 +63,8 @@ async function committerStep(name, report) {
   console.log('FILES:\n  ' + add.join('\n  '));
   console.log('PR TITLE: ' + (pr || msg));
   if (!isY(await ask('\nAccept and commit? (Y/N): '))) { console.log('skipped - commit by hand'); return; }
+  const pending = spawnSync('git', ['status', '--porcelain', ...add]).stdout.toString().trim();
+  if (!pending) { console.log('files already committed - nothing to commit (skipping git steps)'); return; }
   const a = spawnSync('git', ['add', ...add], { stdio: 'inherit' });
   if (a.status !== 0) exit(1, 'git add failed');
   const c = spawnSync('git', ['commit', '-m', msg], { stdio: 'inherit' });
