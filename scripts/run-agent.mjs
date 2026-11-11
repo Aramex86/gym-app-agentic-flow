@@ -4,40 +4,30 @@
 // Key safety: never prints OLLAMA_API_KEY (masked as ***).
 // No npm dependencies. Node >= 20.
 
-import { readFileSync, existsSync, openSync, closeSync } from "node:fs";
-import { spawnSync, spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-import { loadEnv } from "./env.mjs";
-loadEnv(); // reads repo .env (PIPELINE_CLI, OLLAMA_*, RUN_MODEL) — system env wins
+import { readFileSync, existsSync, openSync, closeSync } from 'node:fs';
+import { spawnSync, spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { loadEnv } from './env.mjs';
+loadEnv();    // reads repo .env (PIPELINE_CLI, OLLAMA_*, RUN_MODEL) — system env wins
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const exit = (code, msg) => {
-  if (msg) console.error(msg);
-  process.exit(code);
-};
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const exit = (code, msg) => { if (msg) console.error(msg); process.exit(code); };
 
 // --- load routing table (agents-pipeline.yaml, flat "role: model" under "roles:") ---
 function routingTable() {
-  const cfg = path.join(root, "agents-pipeline.yaml");
-  if (!existsSync(cfg))
-    exit(3, `config error: agents-pipeline.yaml not found in ${root}`);
-  const raw = readFileSync(cfg, "utf8");
+  const cfg = path.join(root, 'agents-pipeline.yaml');
+  if (!existsSync(cfg)) exit(3, `config error: agents-pipeline.yaml not found in ${root}`);
+  const raw = readFileSync(cfg, 'utf8');
   const roles = {};
   let inRoles = false;
   for (const line of raw.split(/\r?\n/)) {
     const t = line.trim();
-    if (!t || t.startsWith("#")) continue;
-    if (t === "roles:") {
-      inRoles = true;
-      continue;
-    }
-    if (t.endsWith(":")) {
-      inRoles = false;
-      continue;
-    }
-    if (inRoles && t.includes(":")) {
-      const [role, model] = t.split(":").map((s) => s.trim());
+    if (!t || t.startsWith('#')) continue;
+    if (t === 'roles:') { inRoles = true; continue; }
+    if (t.endsWith(':')) { inRoles = false; continue; }
+    if (inRoles && t.includes(':')) {
+      const [role, model] = t.split(':').map(s => s.trim());
       if (role && model) roles[role] = model;
     }
   }
@@ -46,87 +36,83 @@ function routingTable() {
 
 // --- role contract (.agents/<role>.md): frontmatter "model: ..." ---
 function contractModel(role) {
-  const p = path.join(root, "agents", `${role}.md`);
+  const p = path.join(root, 'agents', `${role}.md`);
   if (!existsSync(p)) return null;
-  const head = readFileSync(p, "utf8").slice(0, 600);
+  const head = readFileSync(p, 'utf8').slice(0, 600);
   const m = head.match(/^model:\s*(\S+)/m);
   return m ? m[1] : null;
 }
 
 function getRoleFile(role) {
-  const p = path.join(root, "agents", `${role}.md`);
+  const p = path.join(root, 'agents', `${role}.md`);
   if (!existsSync(p)) exit(3, `config error: no contract agents/${role}.md`);
   // strip frontmatter (--- ... ---, CRLF-safe): machine reads meta separately
-  const raw = readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+  const raw = readFileSync(p, 'utf8').replace(/\r\n/g, '\n');
   const m = raw.match(/^---\n[\s\S]*?\n---\n?/);
-  return m ? raw.slice(m[0].length) : raw.replace(/^\r?\n/, "");
+  return m ? raw.slice(m[0].length) : raw.replace(/^\r?\n/, '');
 }
+
 
 // --- resolve model ---
 
-const [role = "", ...ctxParts] = process.argv.slice(2);
-if (!role) exit(3, 'usage: node scripts/run-agent.mjs <role> "<context>"');
+// args: <role> [-i input] [-o output] "context..."   (env AGENT_IN/OUT still honored as fallback)
+const rawArgs = process.argv.slice(2);
+const role = rawArgs[0] || '';
+let inFlag, outFlag; const ctxParts = [];
+for (let k = 1; k < rawArgs.length; k++) {
+  if (rawArgs[k] === '-i') inFlag = rawArgs[++k];
+  else if (rawArgs[k] === '-o') outFlag = rawArgs[++k];
+  else ctxParts.push(rawArgs[k]);
+}
+if (!role) exit(3, 'usage: node scripts/run-agent.mjs <role> [-i in-file] [-o out-file] "context"');
 const table = routingTable();
-const model =
-  process.env.RUN_MODEL ||
-  contractModel(role) ||
-  table[role] ||
-  exit(3, `config error: no model for role "${role}"`);
+const model = process.env.RUN_MODEL || contractModel(role) || table[role]
+  || exit(3, `config error: no model for role "${role}"`);
 
 // --- assemble prompt: contract body + context ---
-const ctx = ctxParts.join(" ");
-const inFile = process.env.AGENT_IN; // optional: task/plan file path
-const inFileTxt =
-  inFile && existsSync(inFile)
-    ? `\n\nINPUT FILE (${inFile}):\n${readFileSync(inFile, "utf8")}`
-    : "";
+const ctx = ctxParts.join(' ');
+// derive AGENT_OUT from the input name unless given: planner -> -plan.md, tester -> -report.md
+const stem = (p) => p && p.replace(/\.[^.]+$/, '').split(/[\\/]/).pop();
+const inName = stem(inFlag || process.env.AGENT_IN);
+const autoOut = role === 'planner' && inName ? `docs/plans/${inName}-plan.md`
+              : role === 'tester'  && inName ? `docs/plans/${inName}-report.md` : undefined;
+const inFile = inFlag || process.env.AGENT_IN;    // optional: task/plan file path
+const inFileTxt = inFile && existsSync(inFile) ? `\n\nINPUT FILE (${inFile}):\n${readFileSync(inFile, 'utf8')}` : '';
 const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${ctx}${inFileTxt}`;
 
 // --- spawn CLI ---
-const cli = process.env.PIPELINE_CLI || "opencode";
+const cli = process.env.PIPELINE_CLI || 'opencode';
 // claude: prompt rides on STDIN (argv only flags) — multi-line/dash-proof
-const useStdin = cli === "claude";
+const useStdin = cli === 'claude';
 const cmds = {
-  opencode: ["run", prompt, "--model", `ollama-cloud/${model}`],
+  opencode: ['run', prompt, '--model', `ollama-cloud/${model}`],
   // NOTE: custom model IDs go by ENV — --model on argv is strictly validated
   // and aborts with [claude-code:unrecognized_model] for non-Anthropic ids
   // NOTE: --model belongs on ARGV: model-via-env (ANTHROPIC_MODEL) hits the
   // sdk switch validation and aborts [claude-code:unrecognized_model],
   // while --model on argv is accepted (verified with Ollama Cloud).
-  claude: [
-    "-p",
-    "--model",
-    model,
-    "--allowedTools",
-    "Read,Edit,Write,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)",
-  ], // -p = print mode; prompt rides on stdin
+  claude: ['-p', '--model', model],   // -p = print mode; prompt rides on stdin
 };
-const argv =
-  cmds[cli] ||
-  exit(3, `config error: unknown PIPELINE_CLI "${cli}" (opencode | claude)`);
+const argv = cmds[cli] || exit(3, `config error: unknown PIPELINE_CLI "${cli}" (opencode | claude)`);
 const envs = {
   opencode: {},
   claude: {
-    ANTHROPIC_BASE_URL: process.env.OLLAMA_BASE_URL || "https://ollama.com",
-    ANTHROPIC_AUTH_TOKEN: "***", // real value injected below, never logged
+    ANTHROPIC_BASE_URL: process.env.OLLAMA_BASE_URL || 'https://ollama.com',
+    ANTHROPIC_AUTH_TOKEN: '***', // real value injected below, never logged
     // NO ANTHROPIC_API_KEY here: an empty key makes claude send a broken
     // x-api-key header; provider /v1/models check then fails with 401.
     // Verified working (Ollama docs): only BASE_URL + AUTH_TOKEN.
     // NO model selection via env (see NOTE at cmds above).
     ANTHROPIC_DEFAULT_OPUS_MODEL: model,
     ANTHROPIC_DEFAULT_SONNET_MODEL: model,
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: model, // all tiers -> same model, no 404s
-    CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1",
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: model,   // all tiers -> same model, no 404s
+    CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: '1',
   },
 };
 const env = { ...process.env, ...envs[cli] };
-if (cli === "claude")
-  env.ANTHROPIC_AUTH_TOKEN = process.env.OLLAMA_API_KEY || "";
+if (cli === 'claude') env.ANTHROPIC_AUTH_TOKEN = process.env.OLLAMA_API_KEY || '';
 
-const printable = `${cli} ${argv
-  .join(" ")
-  .replace(/(sk|ntn|ntn_)\S+/g, "***")
-  .slice(0, 120)}... [model=${model}]`;
+const printable = `${cli} ${argv.join(' ').replace(/(sk|ntn|ntn_)\S+/g, '***').slice(0, 120)}... [model=${model}]`;
 console.log(`[run-agent] ${printable}`);
 
 // --- claude runner: async spawn + heartbeat "working… Ns" + log capture ---
@@ -135,27 +121,21 @@ console.log(`[run-agent] ${printable}`);
 function runClaudeLive(argv, env, prompt) {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const logPath = path.join(root, ".pipeline-last-run.log");
-    const logFd = openSync(logPath, "w");
-    const p = spawn("claude", argv, {
-      cwd: root,
-      env,
-      stdio: ["pipe", logFd, logFd],
-    });
+    const logPath = path.join(root, '.pipeline-last-run.log');
+    const logFd = openSync(logPath, 'w');
+    const p = spawn('claude', argv, { cwd: root, env, stdio: ['pipe', logFd, logFd] });
     p.stdin.write(prompt);
     p.stdin.end();
     const hb = setInterval(() => {
-      process.stdout.write(
-        `\r[run-agent] ${role} · ${role} · ${model} · working… ${Math.round((Date.now() - t0) / 1000)}s   `,
-      );
+      process.stdout.write(`\r[run-agent] ${role} · ${model} · working… ${Math.round((Date.now() - t0) / 1000)}s   `);
     }, 3000);
-    p.on("exit", (code) => {
+    p.on('exit', (code) => {
       clearInterval(hb);
       closeSync(logFd);
-      process.stdout.write("\n");
+      process.stdout.write('\n');
       resolve(code);
     });
-    p.on("error", (e) => {
+    p.on('error', (e) => {
       clearInterval(hb);
       closeSync(logFd);
       console.error(`[run-agent] spawn failed: ${e.message}`);
@@ -163,35 +143,23 @@ function runClaudeLive(argv, env, prompt) {
     });
   });
 }
-const runIsAsync = cli === "claude";
+const runIsAsync = cli === 'claude';
 
-console.log(
-  "[run-agent] waiting for claude (output also in .pipeline-last-run.log)…",
-);
-const out = process.env.AGENT_OUT; // expected artifact; verified after run
+console.log('[run-agent] waiting for claude (output also in .pipeline-last-run.log)…');
+const out = outFlag || process.env.AGENT_OUT || autoOut;  // expected artifact; verified after run
 if (runIsAsync) {
   const code = await runClaudeLive(argv, env, prompt);
   if (code === -1) process.exit(2);
-  if (code !== 0)
-    exit(
-      code ?? 1,
-      `[run-agent] CLI exited ${code} (log: .pipeline-last-run.log)`,
-    );
+  if (code !== 0) exit(code ?? 1, `[run-agent] CLI exited ${code} (log: .pipeline-last-run.log)`);
 } else {
-  const r = spawnSync(cli, argv, {
-    cwd: root,
-    env,
-    stdio: "inherit",
-    timeout: 10 * 60_000,
-  });
+  const r = spawnSync(cli, argv, { cwd: root, env, stdio: 'inherit', timeout: 10 * 60_000 });
   if (r.error) exit(2, `spawn failed: ${r.error.message}`);
   if (r.status !== 0) exit(r.status ?? 1, `[run-agent] CLI exited ${r.status}`);
 }
 
 if (out) {
   const abs = path.join(root, out);
-  if (!existsSync(abs))
-    exit(2, `machine gate: expected artifact missing: ${out}`);
+  if (!existsSync(abs)) exit(2, `machine gate: expected artifact missing: ${out}`);
   console.log(`[run-agent] artifact ok: ${out}`);
 }
 console.log(`[run-agent] role=${role} model=${model} done`);
