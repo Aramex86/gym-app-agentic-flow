@@ -1,0 +1,20 @@
+# pipeline.yaml — Multi-agent routing table
+# The ONLY place where role -> model mapping lives.
+# Changing a model = edit ONE line here. No code changes anywhere.
+# Read by scripts/run-agent.mjs (step 4).
+
+roles:
+  planner: kimi-k3.1       # reasoning: architecture, plan quality
+  developer: glm-5.3-flash # spec-to-code translation
+  tester: glm-5.3-flash    # fast verdict runs
+  reviewer: deepseek       # scaffold — live in a later card
+
+gates:
+  handoff_after_plan: true      # human Y/N before implementation starts
+  merge_main_by_human: true     # agents never merge to main
+
+# NOT here (on purpose):
+# - CLI binary choice   -> env PIPELINE_CLI (opencode | claude) at run time
+# - provider endpoint   -> env OLLAMA_BASE_URL
+# - API key             -> env only, never in files
+# - per-run overrides   -> env RUN_MODEL=kimi-k3.1 (wins over this table)
