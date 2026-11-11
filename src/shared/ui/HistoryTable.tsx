@@ -11,6 +11,8 @@ export interface HistoryTableProps {
   caption?: string;
   /** Optional trailing "Actions" column; the page supplies actual buttons. */
   actions?: (row: HistoryRowInfo) => ReactNode;
+  /** Compact read-only view: 4 combined columns, no actions cells. */
+  compact?: boolean;
 }
 
 /** Shape of one flattened row — exported so pages can type action handlers. */
@@ -63,13 +65,27 @@ const ACTION_CELL_STYLE = {
   padding: "var(--sp-xs) var(--sp-md)",
 } as const;
 
+/* Compact variants: denser vertical padding, same tokens (plan §3). */
+const COMPACT_CELL_STYLE = {
+  ...CELL_STYLE,
+  padding: "var(--sp-xs) var(--sp-sm)",
+} as const;
+
+const COMPACT_NUMERIC_CELL_STYLE = {
+  ...COMPACT_CELL_STYLE,
+  fontFamily: "var(--font-metric)",
+} as const;
+
 export function HistoryTable({
   weeks,
   caption = "Training history",
   actions,
+  compact = false,
 }: HistoryTableProps): JSX.Element {
   const rows = flattenRows(weeks);
-  const columns = 6 + (actions ? 1 : 0);
+  const columns = compact ? 4 : 6 + (actions ? 1 : 0);
+  /* Compact is read-only: the actions callback must not even run. */
+  const showActions = !compact && Boolean(actions);
 
   return (
     <div
@@ -119,10 +135,18 @@ export function HistoryTable({
             <th scope="col" style={HEADER_STYLE}>Week</th>
             <th scope="col" style={HEADER_STYLE}>Split</th>
             <th scope="col" style={HEADER_STYLE}>Exercise</th>
-            <th scope="col" style={HEADER_STYLE}>Sets × Reps</th>
-            <th scope="col" style={HEADER_STYLE}>RPE</th>
-            <th scope="col" style={HEADER_STYLE}>Rest</th>
-            {actions ? (
+            {compact ? (
+              <th scope="col" style={HEADER_STYLE}>
+                Sets × Reps @ RPE
+              </th>
+            ) : (
+              <>
+                <th scope="col" style={HEADER_STYLE}>Sets × Reps</th>
+                <th scope="col" style={HEADER_STYLE}>RPE</th>
+                <th scope="col" style={HEADER_STYLE}>Rest</th>
+              </>
+            )}
+            {showActions ? (
               <th scope="col" style={HEADER_STYLE}>Actions</th>
             ) : null}
           </tr>
@@ -140,17 +164,25 @@ export function HistoryTable({
           ) : (
             rows.map(({ week, split, exercise }) => (
               <tr key={exercise.id} className="history-table__row" data-testid="history-row">
-                <td style={NUMERIC_CELL_STYLE}>{week}</td>
-                <td style={CELL_STYLE}>{split}</td>
-                <td style={CELL_STYLE}>{exercise.name}</td>
-                <td style={NUMERIC_CELL_STYLE}>
-                  {exercise.sets} × {exercise.reps}
-                </td>
-                <td style={NUMERIC_CELL_STYLE}>{exercise.rpe}</td>
-                <td style={NUMERIC_CELL_STYLE}>{exercise.restSec}s</td>
-                {actions ? (
+                <td style={compact ? COMPACT_NUMERIC_CELL_STYLE : NUMERIC_CELL_STYLE}>{week}</td>
+                <td style={compact ? COMPACT_CELL_STYLE : CELL_STYLE}>{split}</td>
+                <td style={compact ? COMPACT_CELL_STYLE : CELL_STYLE}>{exercise.name}</td>
+                {compact ? (
+                  <td style={COMPACT_NUMERIC_CELL_STYLE}>
+                    {exercise.sets} × {exercise.reps} @ {exercise.rpe}
+                  </td>
+                ) : (
+                  <>
+                    <td style={NUMERIC_CELL_STYLE}>
+                      {exercise.sets} × {exercise.reps}
+                    </td>
+                    <td style={NUMERIC_CELL_STYLE}>{exercise.rpe}</td>
+                    <td style={NUMERIC_CELL_STYLE}>{exercise.restSec}s</td>
+                  </>
+                )}
+                {showActions ? (
                   <td style={ACTION_CELL_STYLE}>
-                    {actions({ week, split, exercise })}
+                    {actions?.({ week, split, exercise })}
                   </td>
                 ) : null}
               </tr>

@@ -28,6 +28,21 @@ OUTPUT CONTRACT:
   - bug-log: any defect found, with repro steps
 - FAIL = stop. Do not fix anything yourself; the report goes to the
   human gate, and Developer gets it as a new task.
+- BUG-LOG VOICE (when verdict is FAIL): each bug is a short story a human
+  can follow, not a stacktrace. For every bug give 3 numbered lines:
+  What happened: one plain sentence (what you observed)
+  Why it matters: impact on the user/task (why someone should care)
+  How to fix: what needs to change, and WHO does it
+  (developer fix / planner re-plan / HUMAN action)
+  Technical details (paths, line numbers, commands) go ONLY into a small
+  "Evidence" line under each bug, never into the story itself.
+  Example voice:
+  What happened: the toggle button exists but clicking it does
+  nothing - the state never reaches the table.
+  Why it matters: the feature is dead on arrival; users see no effect.
+  How to fix: pass the compact prop down in the page wiring
+  (developer fix, one line).
+  Evidence: ProgressPage.tsx wiring block, 1 line diff.
 
 NEVER: modify product code, push, merge.
 
