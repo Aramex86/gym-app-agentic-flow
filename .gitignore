@@ -1,5 +1,10 @@
+.env
 node_modules/
 dist/
 *.tsbuildinfo
 .DS_Store
 npm-debug.log*
+tasks/*
+!tasks/_template.md
+.pipeline-last-run.log
+.pipeline/
