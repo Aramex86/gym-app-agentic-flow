@@ -98,7 +98,7 @@ const cmds = {
     "--model",
     model,
     "--allowedTools",
-    "Read,Edit,Write,Bash(pnpm:*)",
+    "Read,Edit,Write,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)",
   ], // -p = print mode; prompt rides on stdin
 };
 const argv =
@@ -146,7 +146,7 @@ function runClaudeLive(argv, env, prompt) {
     p.stdin.end();
     const hb = setInterval(() => {
       process.stdout.write(
-        `\r[run-agent] working… ${Math.round((Date.now() - t0) / 1000)}s   `,
+        `\r[run-agent] ${role} · ${role} · ${model} · working… ${Math.round((Date.now() - t0) / 1000)}s   `,
       );
     }, 3000);
     p.on("exit", (code) => {

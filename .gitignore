@@ -8,3 +8,5 @@ tasks/*
 !tasks/_template.md
 .pipeline-last-run.log
 .pipeline/
+.pipeline-last-run.log
+docs/plans/
