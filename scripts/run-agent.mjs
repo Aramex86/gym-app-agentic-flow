@@ -74,8 +74,11 @@ const ctx = ctxParts.join(' ');
 // derive AGENT_OUT from the input name unless given: planner -> -plan.md, tester -> -report.md
 const stem = (p) => p && p.replace(/\.[^.]+$/, '').split(/[\\/]/).pop();
 const inName = stem(inFlag || process.env.AGENT_IN);
-const autoOut = role === 'planner' && inName ? `docs/plans/${inName}-plan.md`
-              : role === 'tester'  && inName ? `docs/plans/${inName}-report.md` : undefined;
+// strip a trailing "-plan" from the input name first: an input …-plan.md
+// yields …-report.md (NOT …-plan-report.md) — matches the tester contract X-report.md
+const baseName = inName ? inName.replace(/-plan$/, '') : undefined;
+const autoOut = role === 'planner' && baseName ? `docs/plans/${baseName}-plan.md`
+              : role === 'tester'  && baseName ? `docs/plans/${baseName}-report.md` : undefined;
 const inFile = inFlag || process.env.AGENT_IN;    // optional: task/plan file path
 const inFileTxt = inFile && existsSync(inFile) ? `\n\nINPUT FILE (${inFile}):\n${readFileSync(inFile, 'utf8')}` : '';
 const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${ctx}${inFileTxt}`;
@@ -91,7 +94,8 @@ const cmds = {
   // NOTE: --model belongs on ARGV: model-via-env (ANTHROPIC_MODEL) hits the
   // sdk switch validation and aborts [claude-code:unrecognized_model],
   // while --model on argv is accepted (verified with Ollama Cloud).
-  claude: ['-p', '--model', model],   // -p = print mode; prompt rides on stdin
+  claude: ['-p', '--model', model,
+    '--allowedTools', 'Read,Edit,Write,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)'],   // -p = print mode; prompt rides on stdin
 };
 const argv = cmds[cli] || exit(3, `config error: unknown PIPELINE_CLI "${cli}" (opencode | claude)`);
 const envs = {
@@ -146,7 +150,9 @@ function runClaudeLive(argv, env, prompt) {
 const runIsAsync = cli === 'claude';
 
 console.log('[run-agent] waiting for claude (output also in .pipeline-last-run.log)…');
-const out = outFlag || process.env.AGENT_OUT || autoOut;  // expected artifact; verified after run
+// priority: -o > auto-name from -i (freshest) > env (falls back; stale env must
+// never beat the auto name derived from the current input)
+const out = outFlag || autoOut || process.env.AGENT_OUT;  // expected artifact; verified after run
 if (runIsAsync) {
   const code = await runClaudeLive(argv, env, prompt);
   if (code === -1) process.exit(2);

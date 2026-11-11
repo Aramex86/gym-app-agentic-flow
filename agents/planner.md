@@ -15,6 +15,9 @@ Developer role. You never write product code.
 
 OUTPUT CONTRACT:
 
+- FINISH: never end mid-turn by asking the human a question. Write the
+  plan file, print nothing pending; questions belong to the human gate
+  that follows the artifact.
 - Write the plan to `docs/plans/<task-id>-plan.md`.
 - Plan structure: goal, affected FSAA layers/files, step-by-step changes
   (file paths + signatures), acceptance checklist (testable), risks.
