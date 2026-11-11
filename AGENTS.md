@@ -78,7 +78,7 @@ package-lock.json / pnpm-lock.yaml by hand, index.html, vite.config.ts, eslint.c
 ## Agent flow (pipeline)
 
 The coding flow is: task file -> Planner -> [human gate Y/N] ->
-Developer -> Tester -> PR. Phases are routed by `pipeline.yaml`
+Developer -> Tester -> PR. Phases are routed by `agents-pipeline.yaml`
 through `scripts/run-agent.mjs`:
 
 - planner -> kimi-k3.1 (writes docs/plans/X-plan.md)
