@@ -221,3 +221,18 @@ describe("shared/ui HistoryTable — tokens only", () => {
     expect(progressPageSource).not.toMatch(/fetch\s*\(|axios/i);
   });
 });
+
+describe("shared/ui HistoryTable — scrollbar styling", () => {
+  /* Pins the style-scrollbar contract: thin scrollbar on the scroll
+     container plus the WebKit fallback, token-colored (no inline styles —
+     pseudo-selectors live in the scoped <style> block). jsdom cannot render
+     scrollbars, so the assertion is on the emitted CSS string. */
+  it("emits a <style> with scrollbar-width: thin and a webkit fallback", () => {
+    const html = render(<HistoryTable weeks={allWeeks} />);
+    expect(html).toContain("scrollbar-width: thin");
+    expect(html).toContain("scrollbar-color: var(--surface-bright) transparent");
+    expect(html).toContain(".history-table::-webkit-scrollbar-thumb");
+    // Thumb + hover stay token-only.
+    expect(html).toContain(".history-table::-webkit-scrollbar-thumb:hover");
+  });
+});

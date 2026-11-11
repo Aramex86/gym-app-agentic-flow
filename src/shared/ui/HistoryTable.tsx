@@ -90,6 +90,18 @@ export function HistoryTable({
       <style>{`
 .history-table__row { background: var(--surface-lifted); border-bottom: 1px solid var(--edge); }
 .history-table__row:hover { background: var(--surface); }
+/* Thin scrollbar (standard properties: Chromium 121+, Firefox). */
+.history-table { scrollbar-width: thin; scrollbar-color: var(--surface-bright) transparent; }
+/* WebKit fallback (Safari, older Chromium). */
+.history-table::-webkit-scrollbar { width: 8px; height: 8px; }
+.history-table::-webkit-scrollbar-track { background: transparent; }
+.history-table::-webkit-scrollbar-thumb {
+  background: var(--edge);
+  border-radius: var(--r-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.history-table::-webkit-scrollbar-thumb:hover { background: var(--text-muted); background-clip: content-box; }
 `}</style>
       <table
         style={{
