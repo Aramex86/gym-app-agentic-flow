@@ -15,6 +15,9 @@ the plan is your input contract (after the human handoff gate Y).
 
 RULES:
 
+- SCOPE: implement ONLY files listed in the plan. NEVER touch pipeline
+  files (agents/_, agents-pipeline.yaml, scripts/_, package.json,
+  pnpm-lock.yaml), .gitignore, or anything else outside the plan.
 - Read ONLY the plan file (AGENT_IN) — never guess the task from chat.
 - Follow FSAA: feature work in src/features/**, business logic in
   src/entities/**, primitives in src/shared/\*\*. No upward imports.

@@ -4,14 +4,15 @@
 # Read by scripts/run-agent.mjs (step 4).
 
 roles:
-  planner: kimi-k3.1       # reasoning: architecture, plan quality
+  planner: minimax-m3.1-flash # reasoning: architecture, plan quality
   developer: glm-5.3-flash # spec-to-code translation
-  tester: glm-5.3-flash    # fast verdict runs
-  reviewer: deepseek       # scaffold — live in a later card
+  tester: glm-5.3-flash # fast verdict runs
+  reviewer: deepseek-v4.1-flash # scaffold — live in a later card
 
 gates:
-  handoff_after_plan: true      # human Y/N before implementation starts
-  merge_main_by_human: true     # agents never merge to main
+  handoff_after_plan: true # human Y/N before implementation starts
+  merge_main_by_human: true # agents never merge to main
+
 
 # NOT here (on purpose):
 # - CLI binary choice   -> env PIPELINE_CLI (opencode | claude) at run time
