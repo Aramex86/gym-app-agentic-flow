@@ -1,9 +1,11 @@
-import { HistoryTable, Button } from "@shared/ui";
+import { useState } from "react";
+import { HistoryTable, Button, ToggleChip } from "@shared/ui";
 import type { HistoryRowInfo } from "@shared/ui";
 import { SAMPLE_PLAN } from "@shared/config/plan.sample";
 
 /* Thin page composition (FSAA pages layer): import -> derive -> render.
-   No fetch, no state, no effects — data is the static SAMPLE_PLAN. */
+   No fetch, no effects — data is the static SAMPLE_PLAN; the only state
+   is the page-local `compact` toggle below (UI view state, not data). */
 
 const weeks = SAMPLE_PLAN.weeks;
 const exercisesPerDay = weeks[0]?.days[0]?.exercises.length ?? 0;
@@ -54,9 +56,24 @@ function handleLog(row: HistoryRowInfo): void {
 }
 
 export function ProgressPage() {
+  const [compact, setCompact] = useState(false);
+
   return (
     <section style={{ padding: "var(--sp-lg)", display: "grid", gap: "var(--sp-lg)" }}>
-      <h2 style={{ margin: 0, color: "var(--text-high)" }}>Progress</h2>
+      <div
+        style={{
+          display: "flex",
+          gap: "var(--sp-md)",
+          alignItems: "center",
+        }}
+      >
+        <h2 style={{ margin: 0, color: "var(--text-high)" }}>Progress</h2>
+        <ToggleChip
+          on={compact}
+          onToggle={() => setCompact((value) => !value)}
+          label="Compact"
+        />
+      </div>
 
       <div style={{ display: "flex", gap: "var(--sp-md)" }}>
         <div style={cardStyle}>
@@ -75,6 +92,7 @@ export function ProgressPage() {
 
       <HistoryTable
         weeks={weeks}
+        compact={compact}
         actions={(row: HistoryRowInfo) => (
           <span style={actionsCellStyle}>
             <Button variant="primary" onClick={() => handleBegin(row)}>

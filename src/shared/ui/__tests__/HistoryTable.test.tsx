@@ -222,6 +222,67 @@ describe("shared/ui HistoryTable — tokens only", () => {
   });
 });
 
+describe("shared/ui HistoryTable — compact", () => {
+  /* Compact is read-only: 4 combined columns, actions suppressed entirely
+     (no Actions header, no callback invocation — plan §3). */
+
+  it("renders exactly four headers — Week, Split, Exercise, Sets × Reps @ RPE", () => {
+    const html = render(<HistoryTable compact weeks={allWeeks} />);
+    expect(html.match(/<th\b/g)?.length).toBe(4);
+    for (const header of ["Week", "Split", "Exercise", "Sets × Reps @ RPE"]) {
+      expect(html).toContain(`>${header}<`);
+    }
+    // Standalone metric headers disappear in compact mode.
+    expect(html).not.toContain(">RPE<");
+    expect(html).not.toContain(">Sets × Reps<");
+    expect(html).not.toContain(">Rest<");
+    expect(html).not.toContain(">Actions<");
+  });
+
+  it("emits one combined metric cell per row in the compact metric style", () => {
+    const html = render(<HistoryTable compact weeks={unevenWeeks} />);
+    expect(html).toEqual(expect.stringContaining("2 × 2 @ 6"));
+    expect(html).toContain("3 × 3 @ 7");
+    expect(html).toContain("var(--font-metric)");
+    expect(html).toContain("var(--sp-xs) var(--sp-sm)");
+  });
+
+  it("does not invoke the actions callback nor render its output when set", () => {
+    let calls = 0;
+    const html = render(
+      <HistoryTable
+        compact
+        weeks={unevenWeeks}
+        actions={() => {
+          calls += 1;
+          return (
+            <>
+              <button type="button">a</button>
+              <button type="button">b</button>
+            </>
+          );
+        }}
+      />,
+    );
+    expect(calls).toBe(0);
+    expect(html).not.toContain(">Actions<");
+    expect(html).not.toContain("<button");
+  });
+
+  it("empty compact state narrows colSpan to 4", () => {
+    const html = render(<HistoryTable compact weeks={[]} />);
+    expect(html).toContain('colSpan="4"');
+    expect(html).toContain("No history yet");
+  });
+
+  it("keeps row count and caption behavior identical to normal mode", () => {
+    const html = render(<HistoryTable compact weeks={allWeeks} />);
+    const rowCount = html.match(/data-testid="history-row"/g)?.length ?? 0;
+    expect(rowCount).toBe(totalRows);
+    expect(html).toContain("Training history");
+  });
+});
+
 describe("shared/ui HistoryTable — scrollbar styling", () => {
   /* Pins the style-scrollbar contract: thin scrollbar on the scroll
      container plus the WebKit fallback, token-colored (no inline styles —

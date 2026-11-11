@@ -1,5 +1,5 @@
 ---
-model: minimax-m3.1-flash
+model: kimi-k3.1-pro
 worktree: plan-branch
 tools: read,edit,write
 in: tasks/X-task.md

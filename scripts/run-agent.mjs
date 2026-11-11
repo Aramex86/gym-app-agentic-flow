@@ -56,7 +56,7 @@ function getRoleFile(role) {
 // --- resolve model ---
 // role colors (ANSI): planner=green, developer=dark orange, tester=cyan
 const RESET = '\x1b[0m';
-const ROLE_COLOR = { planner: '\x1b[32m', developer: '\x1b[38;5;208m', tester: '\x1b[36m' };
+const ROLE_COLOR = { planner: '\x1b[32m', developer: '\x1b[38;5;208m', tester: '\x1b[36m', committer: '\x1b[35m' };
 const rc = (text) => (ROLE_COLOR[role] || '') + text + RESET;
 
 // args: <role> [-i input] [-o output] "context..."   (env AGENT_IN/OUT still honored as fallback)
@@ -84,7 +84,8 @@ const inName = stem(inFlag || process.env.AGENT_IN);
 // yields -report.md (NOT -plan-report.md)  matches the tester contract X-report.md
 const baseName = inName ? inName.replace(/-plan$/, '') : undefined;
 const autoOut = role === 'planner' && baseName ? `docs/plans/${baseName}-plan.md`
-              : role === 'tester'  && baseName ? `docs/plans/${baseName}-report.md` : undefined;
+              : role === 'tester'  && baseName ? `docs/plans/${baseName}-report.md`
+              : role === 'committer' && baseName ? `docs/plans/${baseName}-commit.md` : undefined;
 const inFile = inFlag || process.env.AGENT_IN;    // optional: task/plan file path
 const inFileTxt = inFile && existsSync(inFile) ? `\n\nINPUT FILE (${inFile}):\n${readFileSync(inFile, 'utf8')}` : '';
 const out = outFlag || autoOut || process.env.AGENT_OUT;  // expected artifact; verified after run

@@ -4,7 +4,7 @@
 # Read by scripts/run-agent.mjs (step 4).
 
 roles:
-  planner: minimax-m3.1-flash # reasoning: architecture, plan quality
+  planner: kimi-k3.1-pro # reasoning: architecture, plan quality
   developer: glm-5.3-flash # spec-to-code translation
   tester: glm-5.3-flash # fast verdict runs
   reviewer: deepseek-v4.1-flash # scaffold — live in a later card
