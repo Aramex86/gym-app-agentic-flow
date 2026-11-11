@@ -2,4 +2,6 @@
 export { AppShell } from "./AppShell";
 export type { AppShellProps } from "./AppShell";
 export { HistoryTable } from "./HistoryTable";
-export type { HistoryTableProps } from "./HistoryTable";
+export type { HistoryTableProps, HistoryRowInfo } from "./HistoryTable";
+export { Button } from "./atoms/Button";
+export type { ButtonProps } from "./atoms/Button";

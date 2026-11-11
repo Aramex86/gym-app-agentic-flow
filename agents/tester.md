@@ -30,3 +30,10 @@ OUTPUT CONTRACT:
   human gate, and Developer gets it as a new task.
 
 NEVER: modify product code, push, merge.
+
+- COMMIT VERIFICATION (do NOT use the working tree for this): after the
+  human gate commits, `git status` is clean and diffs are empty by design.
+  Verify "tests in the same commit" against git history instead:
+  git log --oneline -3 + git show --stat HEAD (deliverable files in the
+  last task commit). An empty working tree is NOT evidence of a missing
+  deliverable.

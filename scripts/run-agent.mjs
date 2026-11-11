@@ -1,4 +1,4 @@
-// scripts/run-agent.mjs — role router for the multi-agent pipeline.
+// scripts/run-agent.mjs  role router for the multi-agent pipeline.
 // Resolution: RUN_MODEL env > role frontmatter model > pipeline.yaml table.
 // Spawn: chosen CLI (env PIPELINE_CLI = opencode | claude) headless in cwd.
 // Key safety: never prints OLLAMA_API_KEY (masked as ***).
@@ -9,7 +9,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { loadEnv } from './env.mjs';
-loadEnv();    // reads repo .env (PIPELINE_CLI, OLLAMA_*, RUN_MODEL) — system env wins
+loadEnv();    // reads repo .env (PIPELINE_CLI, OLLAMA_*, RUN_MODEL)  system env wins
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const exit = (code, msg) => { if (msg) console.error(msg); process.exit(code); };
@@ -54,6 +54,10 @@ function getRoleFile(role) {
 
 
 // --- resolve model ---
+// role colors (ANSI): planner=green, developer=dark orange, tester=cyan
+const RESET = '\x1b[0m';
+const ROLE_COLOR = { planner: '\x1b[32m', developer: '\x1b[38;5;208m', tester: '\x1b[36m' };
+const rc = (text) => (ROLE_COLOR[role] || '') + text + RESET;
 
 // args: <role> [-i input] [-o output] "context..."   (env AGENT_IN/OUT still honored as fallback)
 const rawArgs = process.argv.slice(2);
@@ -69,27 +73,32 @@ const table = routingTable();
 const model = process.env.RUN_MODEL || contractModel(role) || table[role]
   || exit(3, `config error: no model for role "${role}"`);
 
+// priority: -o > auto-name from -i > env (stale env must never beat the auto name)
+
 // --- assemble prompt: contract body + context ---
 const ctx = ctxParts.join(' ');
 // derive AGENT_OUT from the input name unless given: planner -> -plan.md, tester -> -report.md
 const stem = (p) => p && p.replace(/\.[^.]+$/, '').split(/[\\/]/).pop();
 const inName = stem(inFlag || process.env.AGENT_IN);
-// strip a trailing "-plan" from the input name first: an input …-plan.md
-// yields …-report.md (NOT …-plan-report.md) — matches the tester contract X-report.md
+// strip a trailing "-plan" from the input name first: an input -plan.md
+// yields -report.md (NOT -plan-report.md)  matches the tester contract X-report.md
 const baseName = inName ? inName.replace(/-plan$/, '') : undefined;
 const autoOut = role === 'planner' && baseName ? `docs/plans/${baseName}-plan.md`
               : role === 'tester'  && baseName ? `docs/plans/${baseName}-report.md` : undefined;
 const inFile = inFlag || process.env.AGENT_IN;    // optional: task/plan file path
 const inFileTxt = inFile && existsSync(inFile) ? `\n\nINPUT FILE (${inFile}):\n${readFileSync(inFile, 'utf8')}` : '';
-const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${ctx}${inFileTxt}`;
+const out = outFlag || autoOut || process.env.AGENT_OUT;  // expected artifact; verified after run
+
+const outDirective = out ? `\nOUTPUT PATH (write the artifact EXACTLY here - do not add dates or rename):\n${out}` : '';
+const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${ctx}${inFileTxt}${outDirective}`;
 
 // --- spawn CLI ---
 const cli = process.env.PIPELINE_CLI || 'opencode';
-// claude: prompt rides on STDIN (argv only flags) — multi-line/dash-proof
+// claude: prompt rides on STDIN (argv only flags)  multi-line/dash-proof
 const useStdin = cli === 'claude';
 const cmds = {
   opencode: ['run', prompt, '--model', `ollama-cloud/${model}`],
-  // NOTE: custom model IDs go by ENV — --model on argv is strictly validated
+  // NOTE: custom model IDs go by ENV  --model on argv is strictly validated
   // and aborts with [claude-code:unrecognized_model] for non-Anthropic ids
   // NOTE: --model belongs on ARGV: model-via-env (ANTHROPIC_MODEL) hits the
   // sdk switch validation and aborts [claude-code:unrecognized_model],
@@ -117,9 +126,9 @@ const env = { ...process.env, ...envs[cli] };
 if (cli === 'claude') env.ANTHROPIC_AUTH_TOKEN = process.env.OLLAMA_API_KEY || '';
 
 const printable = `${cli} ${argv.join(' ').replace(/(sk|ntn|ntn_)\S+/g, '***').slice(0, 120)}... [model=${model}]`;
-console.log(`[run-agent] ${printable}`);
+console.log(rc(`[run-agent] ${printable}`));
 
-// --- claude runner: async spawn + heartbeat "working… Ns" + log capture ---
+// --- claude runner: async spawn + heartbeat "working Ns" + log capture ---
 // print-mode output is silent until done; the timer line proves liveness.
 // Full CLI output lands in .pipeline-last-run.log (repo root) for inspection.
 function runClaudeLive(argv, env, prompt) {
@@ -131,7 +140,7 @@ function runClaudeLive(argv, env, prompt) {
     p.stdin.write(prompt);
     p.stdin.end();
     const hb = setInterval(() => {
-      process.stdout.write(`\r[run-agent] ${role} · ${model} · working… ${Math.round((Date.now() - t0) / 1000)}s   `);
+      process.stdout.write(`\r${ROLE_COLOR[role] || ''}[run-agent] ${role}  ${model}  working ${Math.round((Date.now() - t0) / 1000)}s${RESET}   `);
     }, 3000);
     p.on('exit', (code) => {
       clearInterval(hb);
@@ -149,10 +158,9 @@ function runClaudeLive(argv, env, prompt) {
 }
 const runIsAsync = cli === 'claude';
 
-console.log('[run-agent] waiting for claude (output also in .pipeline-last-run.log)…');
+console.log(rc('[run-agent] waiting for claude (output also in .pipeline-last-run.log)'));
 // priority: -o > auto-name from -i (freshest) > env (falls back; stale env must
 // never beat the auto name derived from the current input)
-const out = outFlag || autoOut || process.env.AGENT_OUT;  // expected artifact; verified after run
 if (runIsAsync) {
   const code = await runClaudeLive(argv, env, prompt);
   if (code === -1) process.exit(2);
@@ -166,6 +174,6 @@ if (runIsAsync) {
 if (out) {
   const abs = path.join(root, out);
   if (!existsSync(abs)) exit(2, `machine gate: expected artifact missing: ${out}`);
-  console.log(`[run-agent] artifact ok: ${out}`);
+  console.log(rc(`[run-agent] artifact ok: ${out}`));
 }
-console.log(`[run-agent] role=${role} model=${model} done`);
+console.log(rc(`[run-agent] role=${role} model=${model} done`));

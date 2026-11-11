@@ -15,6 +15,11 @@ the plan is your input contract (after the human handoff gate Y).
 
 RULES:
 
+- FSAA DISCIPLINE: implement exactly at the layer paths given by the plan.
+  shared/ui holds atoms only (no data fetching, no feature imports).
+  Feature-level logic never leaks into shared/ui. If the plan contradicts
+  the layout rules in AGENTS.md / agents/where-ui-goes.md - do not invent;
+  stop and flag it in your finish summary.
 - SCOPE: implement ONLY files listed in the plan. NEVER touch pipeline
   files (agents/_, agents-pipeline.yaml, scripts/_, package.json,
   pnpm-lock.yaml), .gitignore, or anything else outside the plan.

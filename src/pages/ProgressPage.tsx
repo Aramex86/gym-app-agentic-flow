@@ -1,4 +1,5 @@
-import { HistoryTable } from "@shared/ui";
+import { HistoryTable, Button } from "@shared/ui";
+import type { HistoryRowInfo } from "@shared/ui";
 import { SAMPLE_PLAN } from "@shared/config/plan.sample";
 
 /* Thin page composition (FSAA pages layer): import -> derive -> render.
@@ -35,6 +36,23 @@ const cardValueStyle = {
   color: "var(--text-high)",
 } as const;
 
+/* Row actions (Begin primary / Log secondary) — buttons come from the
+   @shared/ui Button atom; styling lives there (token-only, ADR-0001 D5).
+   SAMPLE_PLAN is static, so handlers are stubs until behavior is wired. */
+
+const actionsCellStyle = {
+  display: "flex",
+  gap: "var(--sp-xs)",
+} as const;
+
+function handleBegin(row: HistoryRowInfo): void {
+  console.info("[progress] begin", row.exercise.id); // TODO: wire behavior
+}
+
+function handleLog(row: HistoryRowInfo): void {
+  console.info("[progress] log", row.exercise.id); // TODO: wire behavior
+}
+
 export function ProgressPage() {
   return (
     <section style={{ padding: "var(--sp-lg)", display: "grid", gap: "var(--sp-lg)" }}>
@@ -55,7 +73,19 @@ export function ProgressPage() {
         </div>
       </div>
 
-      <HistoryTable weeks={weeks} />
+      <HistoryTable
+        weeks={weeks}
+        actions={(row: HistoryRowInfo) => (
+          <span style={actionsCellStyle}>
+            <Button variant="primary" onClick={() => handleBegin(row)}>
+              Begin
+            </Button>
+            <Button variant="secondary" onClick={() => handleLog(row)}>
+              Log
+            </Button>
+          </span>
+        )}
+      />
     </section>
   );
 }

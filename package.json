@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "flow": "node scripts/flow.mjs",
+    "flow:fix": "node scripts/flow.mjs --fix"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",
