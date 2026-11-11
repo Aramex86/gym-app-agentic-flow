@@ -3,19 +3,24 @@
    Reusable: data flows in via props (PlanWeek[]); the component imports
    NO data module and does NO fetching — the page owns SAMPLE_PLAN. */
 
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import type { PlanExercise, PlanWeek } from "@shared/config/plan.schema";
 
 export interface HistoryTableProps {
   weeks: PlanWeek[];
   caption?: string;
+  /** Optional trailing "Actions" column; the page supplies actual buttons. */
+  actions?: (row: HistoryRowInfo) => ReactNode;
 }
 
-interface HistoryRow {
+/** Shape of one flattened row — exported so pages can type action handlers. */
+export interface HistoryRowInfo {
   week: number;
   split: string;
   exercise: PlanExercise;
 }
+
+type HistoryRow = HistoryRowInfo;
 
 /** Flatten weeks -> days -> exercises (generic, no assumptions on counts). */
 function flattenRows(weeks: PlanWeek[]): HistoryRow[] {
@@ -52,11 +57,19 @@ const HEADER_STYLE = {
   padding: "var(--sp-sm) var(--sp-md)",
 } as const;
 
+/* Action cells hold buttons, not metrics — no mono font here. */
+const ACTION_CELL_STYLE = {
+  ...CELL_STYLE,
+  padding: "var(--sp-xs) var(--sp-md)",
+} as const;
+
 export function HistoryTable({
   weeks,
   caption = "Training history",
+  actions,
 }: HistoryTableProps): JSX.Element {
   const rows = flattenRows(weeks);
+  const columns = 6 + (actions ? 1 : 0);
 
   return (
     <div
@@ -97,13 +110,16 @@ export function HistoryTable({
             <th scope="col" style={HEADER_STYLE}>Sets × Reps</th>
             <th scope="col" style={HEADER_STYLE}>RPE</th>
             <th scope="col" style={HEADER_STYLE}>Rest</th>
+            {actions ? (
+              <th scope="col" style={HEADER_STYLE}>Actions</th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
               <td
-                colSpan={6}
+                colSpan={columns}
                 style={{ ...CELL_STYLE, color: "var(--text-muted)" }}
               >
                 No history yet
@@ -120,6 +136,11 @@ export function HistoryTable({
                 </td>
                 <td style={NUMERIC_CELL_STYLE}>{exercise.rpe}</td>
                 <td style={NUMERIC_CELL_STYLE}>{exercise.restSec}s</td>
+                {actions ? (
+                  <td style={ACTION_CELL_STYLE}>
+                    {actions({ week, split, exercise })}
+                  </td>
+                ) : null}
               </tr>
             ))
           )}

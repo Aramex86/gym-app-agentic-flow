@@ -71,6 +71,24 @@ ends up printed to stdout instead of written to a file.
   `develop`/`main` is human-only. `pnpm-lock.yaml` and `package.json` are
   NEVER touched by agents (contract rule, not convention).
 
+## Adopting Flow in a new project (the Flow is project-agnostic)
+
+The engine (scripts/run-agent.mjs, scripts/flow.mjs, package.json "flow"
+scripts) carries no project knowledge. Project specifics live ONLY in:
+
+- `AGENTS.md` - project rules (layer layout, import boundaries, no-touch zones)
+- `agents/<role>.md` - role contract with two fixed sections:
+  == FLOW CONTRACT == (identical across projects: output contract,
+  finish gates, no mid-turn questions)
+  == PROJECT RULES == (this project's layout: FSAA paths, tokens,
+  naming, any domain rules - written by the
+  project owner)
+- `agents/where-ui-goes.md` (or equivalent) - the layer map the planner cites.
+
+Onboarding a new repo = copy scripts + AGENTS.md skeleton + role skeletons,
+fill AGENTS.md and each role's PROJECT RULES block, add models to
+agents-pipeline.yaml. No engine changes.
+
 ## Running rules (learned the hard way)
 
 - Clean worktree at circle start; branch per task (stacked branches ok:

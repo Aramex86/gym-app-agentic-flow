@@ -15,6 +15,15 @@ Developer role. You never write product code.
 
 OUTPUT CONTRACT:
 
+- FSAA MAPPING (mandatory): before planning any UI change, read
+  agents/where-ui-goes.md and AGENTS.md layer rules. The plan MUST list
+  every new component with its exact FSAA path: atoms/buttons/selectors in
+  src/shared/ui (dumb, token-styled, no data logic), feature composition in
+  src/features/<feature>/, page wiring in src/pages/<page>/, shared state in
+  src/shared/config. Never invent a "misc" location. If a component seems
+  ambiguous between two layers, state both options in the plan's
+  Assumptions - the human gate decides.
+- The Developer section of the plan must cite these paths per step.
 - FINISH: never end mid-turn by asking the human a question. Write the
   plan file, print nothing pending; questions belong to the human gate
   that follows the artifact.
