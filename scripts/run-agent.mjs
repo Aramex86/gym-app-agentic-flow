@@ -4,7 +4,7 @@
 // Key safety: never prints OLLAMA_API_KEY (masked as ***).
 // No npm dependencies. Node >= 20.
 
-import { readFileSync, existsSync, openSync, closeSync } from 'node:fs';
+import { readFileSync, existsSync, openSync, closeSync, rmSync } from 'node:fs';
 import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -104,7 +104,12 @@ const cmds = {
   // NOTE: --model belongs on ARGV: model-via-env (ANTHROPIC_MODEL) hits the
   // sdk switch validation and aborts [claude-code:unrecognized_model],
   // while --model on argv is accepted (verified with Ollama Cloud).
+  // INCIDENT 2026-11-12: an orphaned flow hop burned ~2k minimax calls.
+  // Hard caps now bound every hop -> bounded usage per hop, always.
   claude: ['-p', '--model', model,
+    // budget cap: each hop gets a finite number of agentic turns (each turn
+    // ~= one model call + tools). Override via PIPELINE_MAX_TURNS env.
+    '--max-turns', String(parseInt(process.env.PIPELINE_MAX_TURNS || '60', 10)),
     '--allowedTools', 'Read,Edit,Write,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)'],   // -p = print mode; prompt rides on stdin
 };
 const argv = cmds[cli] || exit(3, `config error: unknown PIPELINE_CLI "${cli}" (opencode | claude)`);
@@ -140,8 +145,32 @@ function runClaudeLive(argv, env, prompt) {
     const p = spawn('claude', argv, { cwd: root, env, stdio: ['pipe', logFd, logFd] });
     p.stdin.write(prompt);
     p.stdin.end();
+    const HOP_TIMEOUT = parseInt(process.env.PIPELINE_HOP_TIMEOUT || '900', 10) * 1000;
+    let done = false;
+    p.on('exit', () => { done = true; });
     const hb = setInterval(() => {
-      process.stdout.write(`\r${ROLE_COLOR[role] || ''}[run-agent] ${role}  ${model}  working ${Math.round((Date.now() - t0) / 1000)}s${RESET}   `);
+      // kill-switch: create .pipeline-stop in the repo root -> this hop is
+      // terminated within 3s. No more hunting orphan processes by hand.
+      if (existsSync(path.join(root, '.pipeline-stop'))) {
+        done = true;
+        p.kill('SIGKILL');
+        try { rmSync(path.join(root, '.pipeline-stop')); } catch {}
+        clearInterval(hb);
+        closeSync(logFd);
+        console.error(`\n[run-agent] KILLED by .pipeline-stop (kill-switch used on ${role})`);
+        resolve(130);
+        return;
+      }
+      if (!done && Date.now() - t0 > HOP_TIMEOUT) {
+        done = true;
+        p.kill('SIGKILL');
+        clearInterval(hb);
+        closeSync(logFd);
+        console.error(`\n[run-agent] HOP TIMEOUT (${HOP_TIMEOUT / 1000}s) - killed ${role}. Raise PIPELINE_HOP_TIMEOUT if the role needs longer.`);
+        resolve(124);
+        return;
+      }
+      if (!done) process.stdout.write(`\r${ROLE_COLOR[role] || ''}[run-agent] ${role}  ${model}  working ${Math.round((Date.now() - t0) / 1000)}s${RESET}   `);
     }, 3000);
     p.on('exit', (code) => {
       clearInterval(hb);
