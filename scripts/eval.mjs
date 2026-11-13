@@ -31,7 +31,7 @@ const num = (key) => parseInt(fm.match(new RegExp(key + ':\\s*(\\d+)'))?.[1] || 
 const expected = {
   files_exist: list('files_exist'),
   gates: list('gates'),
-  verdict: (fm.match(/verdict:\\s*(PASS|FAIL)/) || [])[1] || 'PASS',
+  verdict: (fm.match(/verdict:\s*(PASS|FAIL)/) || [])[1] || 'PASS',
   budget_fix_rounds: num('fix_rounds') || 0,
   budget_time_s: num('time_s') || 0,
   forbidden: list('forbidden_paths'),
@@ -59,11 +59,22 @@ const r = spawnSync('git', ['worktree', 'add', join('work', slug), '-b', br, bas
 if (r.status !== 0) exit(1, `worktree add failed (base ${base})`);
 console.log('sandbox: ' + wt);
 
-// deps link: a fresh worktree has no node_modules; link (junction) the main
-// repo's one instead of running pnpm install (needs no network, no approval).
-if (!existsSync(join(wt, 'node_modules')) && existsSync(join(root, 'node_modules'))) {
-  const r = spawnSync('cmd', ['/c', 'mklink', '/J', 'node_modules', join(root, 'node_modules')], { cwd: wt, stdio: 'pipe' });
-  console.log(r.status === 0 ? 'node_modules linked -> main' : 'node_modules link failed (run pnpm install in the sandbox by hand)');
+// deps: fresh worktree lacks node_modules AND .bin shims - a junction is
+// not enough (proven by eval #3: junction showed packages but no .bin).
+// The TOOL provisions honestly: pnpm install from the offline store.
+if (!existsSync(join(wt, 'node_modules', '.bin'))) {
+  // remove dev-created fake .cmd stubs at the root (they shadow real bins)
+  for (const stub of ['eslint.cmd', 'tsc.cmd', 'vitest.cmd', 'vite.cmd']) {
+    try { rmSync(join(wt, stub), { force: true }); } catch {}
+  }
+  console.log('deps: pnpm install --frozen-lockfile (offline store) ...');
+  // shell:true is MANDATORY on Windows: "pnpm" is a .cmd shim, and spawnSync
+  // without shell cannot execute .cmd at all (git.exe works, pnpm.cmd doesn't)
+  const pi = spawnSync('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], { cwd: wt, stdio: 'inherit', shell: true });
+  if (pi.status !== 0 || pi.error) {
+    console.error('EVAL STOP: pnpm install failed (' + (pi.error?.code || 'exit ' + pi.status) + ') - run it by hand in ' + wt + ' to see the real error');
+    process.exit(1);                                  // honest stop: no hops without deps
+  }
 }
 
 // ---- task doc into sandbox ----
@@ -122,10 +133,17 @@ while (budgetRounds > 0 && fixRounds < budgetRounds) {
 // ---- grade (facts vs answer key) ----
 const reportText = existsSync(join(wt, reportRel)) ? readFileSync(join(wt, reportRel), 'utf8') : '';
 const first = reportText.split('\n').slice(0, 5).join(' ');
-const verdict = (first.match(/\\b(PASS|FAIL)\\b/i) || [])[1]?.toUpperCase() || (reportText ? 'FAIL' : 'MISSING');
+const vm = first.match(/\b(PASS|FAIL)\b/i);
+const verdict = vm?.[1]?.toUpperCase() || (reportText ? 'FAIL' : 'MISSING');
 const missing = expected.files_exist.filter((f) => !existsSync(join(wt, f)));
 const filesOk = missing.length === 0;
-const changed = spawnSync('git', ['diff', 'HEAD', '--name-only'], { cwd: wt }).stdout.toString().trim().split('\n').filter(Boolean);
+// scope = COMMITS of the exam branch (diff from develop), not the working
+// tree: the tool intentionally leaves forbidden edits excluded-but-dirty
+// after resets, and "dirty" means the tool caught the drift, not committed it
+const mergeBase = spawnSync('git', ['merge-base', 'develop', 'HEAD'], { cwd: wt }).stdout.toString().trim();
+const changed = spawnSync('git', ['diff', mergeBase ? mergeBase : 'develop', 'HEAD', '--name-only'], { cwd: wt }).stdout.toString().trim().split('\n').filter(Boolean);
+const dirt = spawnSync('git', ['status', '--porcelain'], { cwd: wt }).stdout.toString();
+if (dirt) console.log('note: sandbox has uncommitted residue (tool-excluded forbidden drift) - see git status');
 const violated = changed.filter((f) => expected.forbidden.includes(f));
 const scopeOk = violated.length === 0;
 const totalS = (Date.now() - t0) / 1000;

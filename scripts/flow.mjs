@@ -192,9 +192,20 @@ function ensureWorktree(name) {
   const args = hasBranch ? ['worktree', 'add', wt, br] : ['worktree', 'add', wt, '-b', br, base];
   const r = gitRun(args);
   if (r.status !== 0) exit(1, `worktree add failed (branch ${br}, base ${base})`);
-  // deps link: fresh sandbox has no node_modules; junction the main repo's
-  if (!existsSync(join(wt, 'node_modules')) && existsSync(join('node_modules'))) {
-    spawnSync('cmd', ['/c', 'mklink', '/J', 'node_modules', join(process.cwd(), 'node_modules')], { cwd: wt, stdio: 'pipe' });
+  // deps: the TOOL provisions the sandbox (junction lacks .bin - proven)
+  if (!existsSync(join(wt, 'node_modules', '.bin'))) {
+    spawnSync('git', ['add', '-A'], { cwd: wt, stdio: 'pipe' });
+    spawnSync('git', ['reset', '-q', '--', '.'], { cwd: wt, stdio: 'pipe' });
+    for (const stub of ['eslint.cmd', 'tsc.cmd', 'vitest.cmd', 'vite.cmd']) {
+      try { rmSync(join(wt, stub), { force: true }); } catch {}
+    }
+    console.log('deps: pnpm install --frozen-lockfile in sandbox ...');
+    // shell:true on Windows: pnpm is a .cmd shim (spawnSync without shell = ENOENT)
+    const pi = spawnSync('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], { cwd: wt, stdio: 'inherit', shell: true });
+    if (pi.status !== 0 || pi.error) {
+      console.error('FLOW STOP: pnpm install failed (' + (pi.error?.code || 'exit ' + pi.status) + ') - fix deps in ' + wt + ' by hand');
+      process.exit(1);
+    }
   }
   return wt;
 }
