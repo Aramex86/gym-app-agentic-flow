@@ -25,6 +25,11 @@ describe("pages HomePage", () => {
     expect(render()).toContain(">Home<");
   });
 
+  it("marks the page root with data-smoke", () => {
+    // Root-bound: the attribute must sit on the outermost <section>, not a child.
+    expect(render()).toMatch(/<section[^>]*data-smoke="home"/);
+  });
+
   it("renders the history table with SAMPLE_PLAN data", () => {
     const html = render();
     const rowCount = html.match(/data-testid="history-row"/g)?.length ?? 0;

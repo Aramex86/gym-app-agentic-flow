@@ -7,7 +7,10 @@ import { SAMPLE_PLAN } from "@shared/config/plan.sample";
 
 export function HomePage() {
   return (
-    <section style={{ padding: "var(--sp-lg)", display: "grid", gap: "var(--sp-lg)" }}>
+    <section
+      data-smoke="home"
+      style={{ padding: "var(--sp-lg)", display: "grid", gap: "var(--sp-lg)" }}
+    >
       <h2 style={{ margin: 0, color: "var(--text-high)" }}>Home</h2>
       <HistoryTable weeks={SAMPLE_PLAN.weeks} />
     </section>
