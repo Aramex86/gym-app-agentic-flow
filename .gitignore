@@ -10,3 +10,5 @@ tasks/*
 .pipeline/
 .pipeline-last-run.log
 docs/plans/
+
+/work/

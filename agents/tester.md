@@ -1,7 +1,7 @@
 ---
 model: glm-5.3-flash
 worktree: feat-branch
-tools: read,bash
+tools: Write,Read,Bash(pnpm lint:*),Bash(pnpm typecheck:*),Bash(pnpm test:*),Bash(pnpm build:*),Bash(node scripts:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)
 in: docs/plans/X-plan.md (acceptance checklist)
 out: docs/plans/X-report.md
 ---

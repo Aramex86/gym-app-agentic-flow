@@ -2,7 +2,9 @@
    same react-dom/server pattern as shared/ui AppShell.test.tsx).
    Row count is DERIVED from SAMPLE_PLAN, not hardcoded — the test
    survives sample-data edits (only the exact 40 is an acceptance pin
-   from plan-schema §6, asserted alongside the derived value). */
+   from plan-schema §6, asserted alongside the derived value).
+   Search interaction is covered by the feature suite in
+   src/features/training-history-search/__tests__/. */
 
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
@@ -23,6 +25,20 @@ describe("pages HomePage", () => {
 
   it("renders a Home heading", () => {
     expect(render()).toContain(">Home<");
+  });
+
+  it("renders the wired search field above the table (label + searchbox pair)", () => {
+    const html = render();
+    expect(html).toContain('type="search"');
+    expect(html).toContain(">Search exercises</label>");
+
+    const forAttribute = html.match(/<label[^>]*\bfor="([^"]+)"/)?.[1];
+    const idAttribute = html.match(/<input[^>]*\bid="([^"]+)"/)?.[1];
+    expect(forAttribute).toBeTruthy();
+    expect(idAttribute).toBeTruthy();
+    expect(forAttribute).toBe(idAttribute);
+    // The feature's configured hint reaches the page unchanged.
+    expect(html).toContain('placeholder="Search by exercise name"');
   });
 
   it("renders the history table with SAMPLE_PLAN data", () => {

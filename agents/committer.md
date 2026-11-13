@@ -1,7 +1,7 @@
 ---
 model: glm-5.3-flash
 worktree: current
-tools: read,bash(git status,git diff,git log)
+tools: Read,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*)
 in: docs/plans/<name>-report.md
 out: docs/plans/<name>-commit.md
 ---
@@ -26,7 +26,7 @@ ADD LIST:
 PR TITLE: <one line>
 PR BODY:
 <6-10 plain sentences: what & why, FSAA layers touched, verification
- (gates + tester verdict), reviewer notes>
+(gates + tester verdict), reviewer notes>
 
 - ADD LIST rules: only task deliverables (code + tests). NEVER pipeline
   files (agents*, scripts/*, package.json, pnpm-lock.yaml), docs/plans/,

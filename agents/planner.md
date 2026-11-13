@@ -1,7 +1,7 @@
 ---
-model: kimi-k3.1-pro
+model: deepseek-v4.1-flash
 worktree: plan-branch
-tools: read,edit,write
+tools: Read,Write
 in: tasks/X-task.md
 out: docs/plans/X-plan.md
 ---

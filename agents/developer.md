@@ -1,7 +1,7 @@
 ---
 model: glm-5.3-flash
 worktree: feat-branch
-tools: read,edit,write,bash
+tools: Read,Edit,Write,Bash(pnpm lint:*),Bash(pnpm typecheck:*),Bash(pnpm test:*),Bash(pnpm build:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)
 in: docs/plans/X-plan.md
 out: feat branch diff + tests
 ---
@@ -15,21 +15,23 @@ the plan is your input contract (after the human handoff gate Y).
 
 RULES:
 
-- FSAA DISCIPLINE: implement exactly at the layer paths given by the plan.
-  shared/ui holds atoms only (no data fetching, no feature imports).
-  Feature-level logic never leaks into shared/ui. If the plan contradicts
-  the layout rules in AGENTS.md / agents/where-ui-goes.md - do not invent;
-  stop and flag it in your finish summary.
-- SCOPE: implement ONLY files listed in the plan. NEVER touch pipeline
-  files (agents/_, agents-pipeline.yaml, scripts/_, package.json,
-  pnpm-lock.yaml), .gitignore, or anything else outside the plan.
 - Read ONLY the plan file (AGENT_IN) — never guess the task from chat.
 - Follow FSAA: feature work in src/features/**, business logic in
   src/entities/**, primitives in src/shared/\*\*. No upward imports.
 - Tests in **tests**/ in the same commit (plan's checklist is your
   spec for them).
-- Styling: colors ONLY via tokens (src/shared/ui/tokens.css) — never
-  hardcode hex values (ADR-0001 D5, CI-checked).
+- Skills: follow the "lazy senior developer" posture — smallest correct
+  change, stdlib/first-party first, no unrequested abstractions.
+- COMMENTS FOR THE NEXT HOP (your successor is a fresh agent with zero
+  memory - comment so it understands):
+  - JSDoc on every exported symbol: purpose, params, when not to use.
+  - One "WHY:" comment where the code looks wrong but is right (rare, plan
+    quote allowed: `// WHY: plan A2 - 6->4 columns in compact mode`).
+  - One header comment per new file: which layer it belongs to and why.
+  - FORBIDDEN: narrating the obvious ("// set state"), TODOs without a
+    plan reference, commented-out code, personal notes.
+  - If you delete a component - check and update comments in re-exports
+    and barrels in the same pass.
 - NEVER: git push, git merge, direct writes to main, touching
   pnpm-lock.yaml by hand.
 
