@@ -80,6 +80,7 @@ async function committerStep(_name, report, cwd, rid) {
   console.log('PR TITLE: ' + (pr || msg));
   if (!isY(await ask('\nAccept and commit? (Y/N): '))) { console.log('skipped - commit by hand'); trace.ev(rid, { event: 'gate', gate: 'commit', result: 'N' }); return; }
   trace.ev(rid, { event: 'gate', gate: 'commit', result: 'Y' });
+  const wtRef = String(cwd) === process.cwd() ? '(--no-wt)' : (String(cwd).replace(/\\/g,'/').startsWith('/') ? cwd : join(process.cwd(), cwd));
   const pending = git(['status', '--porcelain', ...add], { cwd }).stdout.toString().trim();
   if (!pending) { console.log('files already committed - nothing to commit (skipping git steps)'); return; }
   const a = spawnSync('git', ['add', ...add], { stdio: 'inherit', cwd });
@@ -87,7 +88,14 @@ async function committerStep(_name, report, cwd, rid) {
   const c = spawnSync('git', ['commit', '-m', msg], { stdio: 'inherit', cwd });
   if (c.status !== 0) exit(1, 'git commit failed');
   clog('committer', `\nCommitted: ${msg}`);
-  console.log(`Next (human): cd ${cwd}; git push -u origin HEAD; PR title: ${pr || msg}`);
+  console.log('\n' + '='.repeat(60));
+  console.log('FINISH (human):');
+  console.log('  1) git push -u origin HEAD   (or: git push origin ' + (git(['branch','--show-current'],{cwd}).stdout.toString().trim() || 'feat/<name>') + ')');
+  console.log('  2) PR: gh pr create --base develop --head feat/<name>');
+  console.log('  3) review -> merge (human only)');
+  console.log('  4) ' + (cwd !== process.cwd() ? 'git worktree remove ' + wtRef + ' --force; git branch -d feat/<name>' : '(no worktree in this run)'));
+  console.log('='.repeat(60));
+
   console.log(`After merge, cleanup: git worktree remove ${cwd}`);
 }
 
@@ -184,6 +192,10 @@ function ensureWorktree(name) {
   const args = hasBranch ? ['worktree', 'add', wt, br] : ['worktree', 'add', wt, '-b', br, base];
   const r = gitRun(args);
   if (r.status !== 0) exit(1, `worktree add failed (branch ${br}, base ${base})`);
+  // deps link: fresh sandbox has no node_modules; junction the main repo's
+  if (!existsSync(join(wt, 'node_modules')) && existsSync(join('node_modules'))) {
+    spawnSync('cmd', ['/c', 'mklink', '/J', 'node_modules', join(process.cwd(), 'node_modules')], { cwd: wt, stdio: 'pipe' });
+  }
   return wt;
 }
 

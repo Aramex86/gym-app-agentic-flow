@@ -242,10 +242,10 @@ function runClaudeLive(argv, env, prompt) {
 const runIsAsync = cli === 'claude';
 
 const RID = process.env.PIPELINE_RUN_ID || null;
+const cwdNow = process.cwd();
+let branch = '';
+try { branch = spawnSync('git', ['branch', '--show-current'], { cwd: cwdNow }).stdout.toString().trim(); } catch {}
 if (RID) {
-  const cwdNow = process.cwd();
-  let branch = '';
-  try { branch = spawnSync('git', ['branch', '--show-current'], { cwd: cwdNow }).stdout.toString().trim(); } catch {}
   ev(RID, { event: 'hop_start', role, model, cwd: cwdNow, branch });
   promptSnap(RID, role, prompt);
 }

@@ -19,6 +19,8 @@ in cmd and PowerShell (no ExecutionPolicy concerns).
 | `scripts/env.mjs` | dep-free `.env` loader (system env wins) |
 | `.env` (gitignored) | `PIPELINE_CLI`, `OLLAMA_BASE_URL`, `OLLAMA_API_KEY` - env only, never in files |
 | `.pipeline-last-run.log` | full CLI output of the last hop (gitignored, local) |
+| `scripts/trace.mjs` | the black box: per-run JSONL trace + prompt/artifact snapshots; `trace.mjs show` = table of a finished run, `trace.mjs watch` = live event stream |
+| `.pipeline/runs/<run-id>/` | trace.jsonl (hop/gate/verdict events with cwd + branch), prompts/ (exact text sent), artifacts/ (copies) |
 
 Run artifacts (`docs/plans/`) are gitignored: plans and reports are run
 state, not product. Full concept doc: `docs/flow-concept.md`.
@@ -28,6 +30,13 @@ state, not product. Full concept doc: `docs/flow-concept.md`.
 ``` text
 pnpm flow tasks\<date>-<name>.md
 ```
+
+SANDBOX MODE (default): the whole circle runs in its own git worktree copy
+(`work/<name>` on branch `feat/<name>`, based on develop) - hops never touch
+your main working tree; `/work/` is added to .gitignore automatically.
+Artifacts live in `work/<name>/docs/plans/`; accept the commit in the
+sandbox; then `cd work\<name> && git push -u origin HEAD`, and after the PR
+merges: `git worktree remove work\<name>`. Opt-out: `--no-wt`.
 
 Planner -> [read plan, Y] -> Developer (+ auto `git status`/diff stat) ->
 [Y] -> Tester -> verdict -> Committer. On `Accept and commit? (Y/N): Y` the
@@ -54,6 +63,7 @@ pnpm flow:fix
 | developer (orange) | glm-5.3-flash | code + tests | SCOPE: only plan files; runs finish gates honestly |
 | tester (cyan) | glm-5.3-flash | `<name>-report.md` | PASS/FAIL verdict; bug-log in human voice (What happened / Why it matters / How to fix / Evidence); commit-verify via git history, not the working tree |
 | committer (magenta) | glm-5.3-flash | `<name>-commit.md` | never touches git; the tool commits after human Y |
+| e2e (violet) | glm-5.3-flash | `<name>-e2e-report.md` | runs Playwright specs after PASS; BLOCKED verdict if deps missing; never fixes code |
 | reviewer (future) | deepseek-v4.1-flash | review file on PRs | scaffold only for now |
 
 Role files have two fixed sections: `== FLOW CONTRACT ==` (identical across
@@ -75,6 +85,45 @@ bare (no `:cloud`) and go on argv, never via env.
 While a hop runs, the terminal shows a colored
 `[run-agent] <role>  <model>  working Ns` (3s ticks). Full CLI output lands
 in `.pipeline-last-run.log`.
+
+## Trace - the black box (always in the MAIN repo)
+
+Every run gets `.pipeline/runs/<run-id>/` even when hops execute inside a
+sandbox worktree - so visibility never depends on where you stand:
+
+``` text
+node scripts/trace.mjs show      # table of the latest (or given) run
+node scripts/trace.mjs watch     # live stream while a circle is running (Ctrl+C stops)
+```
+
+Trace answers "where did the agents work": hop events carry `cwd` and
+`branch`. The committer artifact name derives from the report basename, so
+`<task>-commit.md` is found regardless of how the report path reached the hop.
+
+## Finishing a circle (push / PR / cleanup - human)
+
+The sandbox and its branch are already committed; no extra branch needed
+(the worktree works directly on `feat/<name>`, which exists in the shared
+.git). From the main checkout:
+
+``` text
+git push -u origin feat/<name>                     # 1. push the sandbox branch
+gh pr create --base develop --head feat/<name>     # 2. PR (web UI works too)
+# 3. review -> merge (human only)
+git worktree remove work\<name> --force           # 4. cleanup AFTER merge
+git branch -d feat/<name>
+```
+
+## Usage guards (per hop)
+
+- `--max-turns 60` (env `PIPELINE_MAX_TURNS`): hard budget of agentic turns
+  per hop - one orphaned hop cannot burn unbounded provider usage.
+- `PIPELINE_HOP_TIMEOUT` (default 900s): a hung hop kills itself.
+- Kill-switch: `touch .pipeline-stop` in the repo root -> the running hop is
+  terminated within 3s (verified live), the flag self-removes, exit 130.
+
+Background node processes can outlive a project switch - the caps bound
+their worst case; when in doubt: kill node, touch the flag.
 
 ## Permissions (claude headless)
 
@@ -143,3 +192,7 @@ changes.
 | artifact missing (exit 2) | read `.pipeline-last-run.log` - model refused/erred; rerun |
 | `files already committed` | normal: you committed; just push/PR |
 | committer not parseable | check `agents/committer.md` flat output format |
+| provider usage anomaly | stop background node processes, `touch .pipeline-stop`, check dashboard per model |
+| `flow:fix` touched the wrong place | it targets the sandbox of the latest traced circle; message `fix target: main checkout` means no live sandbox exists |
+| `trace watch` prints nothing | hops have not started yet; check the circle is running and `.pipeline/runs` exists |
+| worktree already exists | `git worktree remove work/<name>` or flow reuses it |
