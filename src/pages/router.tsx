@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom';
 import { ProjectsPage } from './ProjectsPage';
 import { OrdersPage } from './OrdersPage';
 import { HomePage } from './HomePage';
+import { ProgressPage } from './ProgressPage';
 
 /* src/pages — FSAA pages layer, Vite template.
    In the Next.js template this layer IS the App Router (route files).
@@ -14,6 +15,7 @@ export function AppRouter() {
       <Route path="/" element={<HomePage />} />
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/orders" element={<OrdersPage />} />
+      <Route path="/progress" element={<ProgressPage />} />
     </Routes>
   );
 }

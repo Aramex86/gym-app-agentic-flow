@@ -7,6 +7,7 @@ import { BrowserRouter } from "react-router-dom";
 import { AppRouter } from "@pages/router";
 import "@app/globals.css";
 import { SITE } from "@shared/config/site";
+import { AppShell } from "@shared/ui";
 
 export function TopBar() {
   return (
@@ -41,10 +42,9 @@ export function TopBar() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <TopBar />
-      <div className="page">
+      <AppShell title={SITE.name}>
         <AppRouter />
-      </div>
+      </AppShell>
     </BrowserRouter>
   </StrictMode>,
 );
