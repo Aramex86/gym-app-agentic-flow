@@ -195,3 +195,26 @@ work/                sandboxes (gitignored)
 ```
 
 Version: 2026-11-14, after first PASS in the scoreboard.
+
+## 12. Git habits - what to commit, what to keep local
+
+```
+COMMIT to git (small, diffable, part of history):
+  evals/results/scoreboard.md + scoreboard.jsonl   the quality ledger
+                                                   (any diff = effect of a model/config change)
+  scripts/*.mjs                                    the machine itself
+  agents/*.md                                      contracts
+  evals/golden-*.md                                exam files (no secrets inside by design)
+
+KEEP LOCAL (gitignored, audit trail only):
+  .pipeline/runs/ (trace.jsonl, prompts/, artifacts/)  per-run black box:
+                                                       hundreds of lines + plaintext prompts
+  work/<slug>/                                         sandboxes
+  .pipeline-last-run.log                               last-hop log
+```
+
+Habits:
+- after a notable exam run: `git add evals/results && git commit -m "scoreboard: <what ran>"`.
+- traces are never committed: local debugging evidence, plaintext prompts inside.
+- before touching engine/config: make sure the scoreboard commit is in -
+  that's the "before" snapshot for comparing after.
