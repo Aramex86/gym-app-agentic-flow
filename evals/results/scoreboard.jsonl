@@ -6,3 +6,6 @@
 {"date":"2026-11-13","task":"golden-toggle-chip","verdict":"FAIL","files_ok":true,"scope_ok":false,"fix_rounds":1,"seconds":364}
 {"date":"2026-11-13","task":"golden-toggle-chip","verdict":"FAIL","files_ok":true,"scope_ok":true,"fix_rounds":2,"seconds":416}
 {"date":"2026-11-13","task":"golden-toggle-chip","verdict":"PASS","files_ok":true,"scope_ok":true,"fix_rounds":2,"seconds":420}
+{"date":"2026-11-13","task":"golden-ab-deepseek","verdict":"PASS","files_ok":true,"scope_ok":true,"fix_rounds":0,"seconds":152}
+{"date":"2026-11-13","task":"golden-ab-glm","verdict":"FAIL","files_ok":true,"scope_ok":true,"fix_rounds":2,"seconds":361}
+{"date":"2026-11-13","task":"golden-ab-kimi","verdict":"PASS","files_ok":true,"scope_ok":true,"fix_rounds":0,"seconds":299}
