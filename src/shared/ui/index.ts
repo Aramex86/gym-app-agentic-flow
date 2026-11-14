@@ -5,6 +5,8 @@ export { HistoryTable } from "./HistoryTable";
 export type { HistoryTableProps, HistoryRowInfo } from "./HistoryTable";
 export { Button } from "./atoms/Button";
 export type { ButtonProps } from "./atoms/Button";
+export { DisclaimerBanner } from "./atoms/DisclaimerBanner";
+export type { DisclaimerBannerProps, DisclaimerVariant } from "./atoms/DisclaimerBanner";
 export { SearchInput } from "./atoms/SearchInput";
 export type { SearchInputProps } from "./atoms/SearchInput";
 export { ToggleChip } from "./atoms/ToggleChip";

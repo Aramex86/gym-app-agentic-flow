@@ -2,6 +2,8 @@
 
 export { Button } from "./Button";
 export type { ButtonProps } from "./Button";
+export { DisclaimerBanner } from "./DisclaimerBanner";
+export type { DisclaimerBannerProps, DisclaimerVariant } from "./DisclaimerBanner";
 export { SearchInput } from "./SearchInput";
 export type { SearchInputProps } from "./SearchInput";
 export { TableCell, TableHeaderCell } from "./TableCell";

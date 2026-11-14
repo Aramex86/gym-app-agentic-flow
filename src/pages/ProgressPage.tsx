@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { HistoryTable, Button, ToggleChip } from "@shared/ui";
 import type { HistoryRowInfo } from "@shared/ui";
+import { PlanDisclaimer } from "@features/plan-disclaimer";
 import { SAMPLE_PLAN } from "@shared/config/plan.sample";
 
 /* Thin page composition (FSAA pages layer): import -> derive -> render.
@@ -74,6 +75,10 @@ export function ProgressPage() {
           label="Compact"
         />
       </div>
+
+      {/* ADR-0001 D4: disclaimer sits directly under the plan header row.
+          Profile -> variant selection lives in the feature, not the page. */}
+      <PlanDisclaimer />
 
       <div style={{ display: "flex", gap: "var(--sp-md)" }}>
         <div style={cardStyle}>
