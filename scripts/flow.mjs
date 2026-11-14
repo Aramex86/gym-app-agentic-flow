@@ -251,7 +251,16 @@ console.log('Cleanup after merge: git worktree remove work/<name>. Opt-out: --no
 let task = arg1, opts = {};
 for (let i = 2; i < process.argv.length; i++) if (process.argv[i] === '--no-wt') opts.sandbox = false;
 if (opts.sandbox === undefined) opts.sandbox = true;
-if (!task || !existsSync(task)) exit(1, 'usage: pnpm flow tasks\\<date>-<name>.md [--no-wt]   |   pnpm flow:fix');
+if (task && /^notion:/.test(task)) {
+  // user says the task address (notion:<id>) -> the door resolves it BY ID
+  const nid = task.slice('notion:'.length).trim();
+  const r = spawnSync('node', ['scripts/notion-door.mjs', '--id', nid], { stdio: ['ignore', 'pipe', 'inherit'] });
+  if (r.status !== 0) exit(1, 'door failed - see above');
+  const out = r.stdout.toString().trim().split('\n').filter((l) => l.startsWith('tasks/'));
+  task = out.pop();
+  console.log('door resolved: ' + task);
+}
+if (!task || !existsSync(task)) exit(1, 'usage: pnpm flow tasks\\<date>-<name>.md   |   pnpm flow notion:<card-id> [--no-wt]   |   pnpm flow:fix');
 
 const name = task.replace(/^.*[\\/]/, '').replace(/\.md$/, '').replace(/-plan$/, '');
 const plan = 'docs/plans/' + name + '-plan.md';

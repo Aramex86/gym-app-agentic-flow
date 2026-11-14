@@ -107,6 +107,10 @@ const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${ctx}${inFileTxt}${outDirecti
 const cli = process.env.PIPELINE_CLI || 'opencode';
 // claude: prompt rides on STDIN (argv only flags)  multi-line/dash-proof
 const useStdin = cli === 'claude';
+const mcpConfigRaw = process.env.PIPELINE_MCP_CONFIG || path.join(root, '.mcp.json');
+const mcpConfigPath = existsSync(mcpConfigRaw) ? path.resolve(mcpConfigRaw) : null;
+const mcpMode = mcpConfigPath ? ['--mcp-config', mcpConfigPath] : [];
+
 const cmds = {
   opencode: ['run', prompt, '--model', `ollama-cloud/${model}`],
   // NOTE: custom model IDs go by ENV  --model on argv is strictly validated
@@ -127,8 +131,11 @@ const cmds = {
     '--max-turns', String(parseInt(process.env.PIPELINE_MAX_TURNS || '60', 10)),
     '--allowedTools', 'Read,Edit,Write,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)',
     ...(process.env.PIPELINE_OUT_FORMAT === 'json' ? ['--output-format', 'json'] : []),
-  ],   // -p = print mode; prompt rides on stdin
+    ...mcpMode],   // -p = print mode; prompt rides on stdin
 };
+// MCP: repos declare servers in an .mcp.json (or custom path via env) - passed
+// to the CLI; ABSOLUTE path required (hops run in sandbox worktree cwds).
+// Role gates which MCP tools may be called via the SAME tools: frontmatter.
 const argv = cmds[cli] || exit(3, `config error: unknown PIPELINE_CLI "${cli}" (opencode | claude)`);
 // insert --allowedTools (per-role or default) and global --disallowedTools
 const roleTools = contractTools(role);
@@ -244,7 +251,11 @@ function runClaudeLive(argv, env, prompt) {
 }
 const runIsAsync = cli === 'claude';
 
-const RID = process.env.PIPELINE_RUN_ID || null;
+let RID = process.env.PIPELINE_RUN_ID || null;
+if (!RID) {
+  // direct `pnpm agent` hop: mint a standalone run so telemetry/trace work too
+  try { RID = await import('./trace.mjs').then((m) => m.newRun('direct-' + role)); } catch { RID = null; }
+}
 const cwdNow = process.cwd();
 let branch = '';
 try { branch = spawnSync('git', ['branch', '--show-current'], { cwd: cwdNow }).stdout.toString().trim(); } catch {}

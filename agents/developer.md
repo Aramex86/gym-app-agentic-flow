@@ -1,7 +1,7 @@
 ---
 model: glm-5.3-flash
 worktree: feat-branch
-tools: Read,Edit,Write,Bash(pnpm lint:*),Bash(pnpm typecheck:*),Bash(pnpm test:*),Bash(pnpm build:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)
+tools: Read,Edit,Write,Bash(pnpm lint:*),Bash(pnpm typecheck:*),Bash(pnpm test:*),Bash(pnpm build:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),mcp__stitch__list_design_systems,mcp__stitch__list_projects,mcp__stitch__list_screens,mcp__stitch__get_project,mcp__stitch__get_screen,mcp__stitch__download_file
 in: docs/plans/X-plan.md
 out: feat branch diff + tests
 ---

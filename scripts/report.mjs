@@ -39,12 +39,30 @@ const logs = existsSync(logDir) ? readdirSync(logDir).map((f) => {
 
 const digestHtml = logs.filter((l) => l.digest).map((l) => `
   <h3>digest: ${esc(l.f.replace('-digest.log', ''))}</h3>
-  <div class="chiprow">${(l.digest.gates || []).map((g) => `<span class="chip">${esc(String(g).replace(/^- /, "").replace(/`/g, ""))}</span>`).join('')}</div>
+  <ul class="list">${(l.digest.gates || []).map((g) => `<li>${esc(String(g).replace(/^- [ -]*/, '').replace(/`/g, '').trim())}</li>`).join('')}</ul>
   ${(l.digest.bugs || []).length ? '<ol class="bugs">' + l.digest.bugs.map((b) => `<li>${esc(String(b).replace(/^#+[ ]*/i, ''))}</li>`).join('') + '</ol>' : '<p class="ok">no bugs in digest</p>'}`).join('');
 
 const tailHtml = logs.filter((l) => !l.digest).map((l) => `
-  <h3>stdout tail: ${esc(l.f.replace('-tail.log', ''))}</h3>
-  <pre class="tail">${esc(l.txt.trimEnd())}</pre>`).join('');
+  <details><summary>stdout tail: ${esc(l.f.replace('-tail.log', ''))}</summary>
+  <pre class="tail">${esc(l.txt.trimEnd())}</pre></details>`).join('');
+
+
+const commitHtml = (() => {
+  const cFiles = existsSync(join(dir, 'artifacts')) ? readdirSync(join(dir, 'artifacts')).filter((f) => f.endsWith('-commit.md')) : [];
+  if (!cFiles.length) return '';
+  const txt = readFileSync(join(dir, 'artifacts', cFiles[0]), 'utf8');
+  const msg = txt.match(/^COMMIT MESSAGE:\s*(.+)$/m)?.[1]?.trim();
+  const pr = txt.match(/^PR TITLE:\s*(.+)$/m)?.[1]?.trim();
+  const add = (txt.match(/^ADD LIST:\n([\s\S]*?)\nPR TITLE:/m)?.[1] || '').split('\n').map((l) => l.trim().replace(/^- /, '')).filter(Boolean);
+  const body = (txt.match(/^PR BODY:\n([\s\S]*)$/m)?.[1] || '').trim();
+  const bodyHtml = body.split('\n').filter((l) => l.trim()).map((line) =>
+    /^[-*] /.test(line) ? `<li>${esc(line.replace(/^[-*] /, ''))}</li>`
+    : /^\d+\. /.test(line) ? `<li>${esc(line.replace(/^\d+\. /, ''))}</li>`
+    : `<p>${esc(line)}</p>`).join('');
+  return `<h2>Commit proposal</h2><p class="meta"><span class="verdict ok">${esc(msg || '')}</span></p>
+  <ul class="list">${add.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
+  <p class="meta">PR title: ${esc(pr || msg || '')}</p><div>${bodyHtml}</div>`;
+})();
 
 const artifactNames = existsSync(join(dir, 'artifacts')) ? readdirSync(join(dir, 'artifacts')) : [];
 const promptNames = existsSync(join(dir, 'prompts')) ? readdirSync(join(dir, 'prompts')) : [];
@@ -61,6 +79,7 @@ const hopRows = Object.entries(hops).map(([role, h]) => `<tr><td>${esc(role)}</t
 
 const html = `<!doctype html><html><head><meta charset="utf-8"><title>Run ${esc(id)}</title>
 <style>
+details{margin:8px 0}details summary{cursor:pointer;color:var(--dim);padding:4px 0}details[open] summary{color:var(--acc)}
  :root{--bg:#0d1220;--fg:#dcdff5;--dim:#8a92b2;--card:#141a2e;--edge:#27304d;--ok:#34d399;--bad:#f87171;--acc:#7aa2ff}
  *{box-sizing:border-box}body{margin:0;padding:24px;font:14px/1.55 ui-sans-serif,system-ui;background:var(--bg);color:var(--fg)}
  h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:26px 0 8px;color:var(--acc)}h3{font-size:13px;margin:16px 0 4px;color:var(--dim)}
@@ -69,7 +88,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Run ${esc(
  table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid var(--edge);padding:6px 9px;text-align:left}
  th{background:var(--card);color:var(--dim);font-weight:600}tr.ok td{color:var(--ok)}tr.bad td{color:var(--bad)}
  pre{background:var(--card);border:1px solid var(--edge);border-radius:8px;padding:12px;overflow:auto;font-size:12px;color:#aab3d6}
- .chip{display:inline-block;background:var(--card);border:1px solid var(--edge);border-radius:6px;padding:2px 8px;margin:2px;font-size:12px}
+ .chiprow{margin:6px 0}.chip{display:inline-block;background:var(--card);border:1px solid var(--edge);border-radius:6px;padding:2px 8px;margin:2px;font-size:12px}
  .bugs li{color:var(--bad)}.ok{color:var(--ok)}p.ok{margin:6px 0}
  .cards{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}.card{background:var(--card);border:1px solid var(--edge);border-radius:10px;padding:10px 14px;min-width:150px}
  .card b{display:block;font-size:18px}.card span{color:var(--dim);font-size:12px}
@@ -87,7 +106,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>Run ${esc(
 <h2>Hops</h2><table><tr><th>role</th><th>model</th><th>start</th><th>dur</th><th>note</th><th>artifact</th><th>where</th></tr>${hopRows}</table>
 <h2>Token usage</h2><table>${usageRows}</table>
 ${digestHtml}${tailHtml}
-<h2>Artifacts in run dir</h2><div class="chiprow">${promptNames.map((p) => `<span class="chip">prompt: ${esc(p)}</span>`).join('')} ${artifactNames.map((p) => `<span class="chip">artifact: ${esc(p)}</span>`).join('')}</div>
+<details><summary>Artifacts & prompts in run dir</summary><div class="chiprow">${promptNames.map((p) => `<span class="chip">prompt: ${esc(p)}</span>`).join('')} ${artifactNames.map((p) => `<span class="chip">artifact: ${esc(p)}</span>`).join('')}</div></details>
 ${scoreHtml}
 <p class="meta">generated locally from .pipeline/runs - zero model tokens spent on this report</p>
 </body></html>`;
