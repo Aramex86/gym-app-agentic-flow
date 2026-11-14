@@ -57,6 +57,32 @@ describe("pages ProgressPage — compact fixture (no actions, 6 → 4)", () => {
   });
 });
 
+describe("pages ProgressPage — medical disclaimer banner (ADR-0001 D4)", () => {
+  it("renders the disclaimer note under the plan header, before the metrics/table", () => {
+    const { container } = render(<ProgressPage />);
+
+    // Active profile fixture is healthy -> base line only, no doctor warning
+    // (the disease path is pinned by the atom and feature suites).
+    const note = screen.getByRole("note");
+    expect(note.textContent).toContain(
+      "This plan is not medical advice. Stop and consult a professional if pain occurs.",
+    );
+    expect(note.textContent).not.toContain("Consult a doctor");
+
+    // The banner is the only note and sits in DOM order: after the header,
+    // before the metrics cards and the history table.
+    expect(container.querySelectorAll('[role="note"]')[0]).toBe(note);
+    const heading = screen.getByRole("heading", { name: "Progress" });
+    expect(
+      note.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+    const table = historyTable();
+    expect(
+      note.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
 describe("pages ProgressPage — real page integration (7 → 4 → 7)", () => {
   it("owns the compact state: actions vanish in compact mode and return on exit", () => {
     render(<ProgressPage />);
