@@ -13,7 +13,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "flow": "node scripts/flow.mjs",
-    "flow:fix": "node scripts/flow.mjs --fix"
+    "flow:fix": "node scripts/flow.mjs --fix",
+    "eval": "node scripts/eval.mjs",
+    "trace": "node scripts/trace.mjs",
+    "agent": "node scripts/run-agent.mjs",
+    "report": "node scripts/report.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",

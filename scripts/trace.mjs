@@ -7,6 +7,7 @@
 //   node scripts/trace.mjs show [run-id]     show the latest (or given) run as a table
 import { mkdirSync, appendFileSync, copyFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const base = () => join(process.env.PIPELINE_TRACE_BASE || process.cwd(), '.pipeline', 'runs');
@@ -42,6 +43,90 @@ export const snap = (id, rel) => {
       copyFileSync(join('docs/plans', String(rel).split(/[\\/]/).pop()), join(base(), id, 'artifacts', String(rel).split(/[\\/]/).pop()));
   } catch {}
 };
+
+
+// ---- v3 forensics: per-hop stdout tail + report digest --------------------
+// hopTail: keep the last N lines of the hop's own .pipeline-last-run.log
+// inside the run dir, so "why did this hop die" needs no re-run.
+export const hopTail = (id, role, logPath, n = 40) => {
+  if (!id) return;
+  try {
+    if (!existsSync(logPath)) return;
+    const lines = readFileSync(logPath, 'utf8').split('\n');
+    const tail = lines.slice(-n).join('\n');
+    if (!tail.trim()) return;
+    const d = join(base(), id, 'logs');
+    mkdirSync(d, { recursive: true });
+    appendFileSync(join(d, role + '-tail.log'), tail + '\n');
+    ev(id, { event: 'hop_tail_saved', role, lines: Math.min(lines.length, n) });
+  } catch {}
+};
+
+const GATE_RE = /pnpm (lint|typecheck|test|build)|check-agents-md|vitest/i;
+const BUG_RE = /(^|\n)#+\s*Bug\s+\d+[^\n]*/gi;
+// reportDigest: parse the role's artifact for machine gate lines and Bug
+// headers; store as structured events so "why did the run fail" is visible
+// directly in `trace show`, without opening the report.
+export const reportDigest = (id, role, rel) => {
+  if (!id || !rel || !existsSync(rel)) return;
+  const txt = readFileSync(rel, 'utf8');
+  const gates = txt.split('\n').filter((l) => GATE_RE.test(l)).slice(0, 12);
+  const bugs = [...new Set([...txt.matchAll(BUG_RE)].map((m) => m[0].replace(/^\n+/, "").slice(0, 90)))].slice(0, 10);
+  if (!gates.length && !bugs.length) return;
+  const d = join(base(), id, 'logs');
+  mkdirSync(d, { recursive: true });
+  appendFileSync(join(d, role + '-digest.log'), JSON.stringify({ gates, bugs }, null, 1) + '\n');
+  ev(id, { event: 'report_digest', role, gates, bugs });
+};
+
+
+// ---- token/cost telemetry (v1) -------------------------------------------
+// Path A: claude CLI --output-format json puts usage on stdout.
+// Path B (fallback): every CLI run appends a transcript to
+//   ~/.claude/projects/<escaped-cwd>/<session>.jsonl with usage per message.
+// The projects dir is overridable (PIPELINE_CLAUDE_PROJECTS) for smokes.
+// usage: parse newest transcript written after `sinceTs` and sum the
+// assistant rows' usage {input_tokens, output_tokens, cache_read tokens}.
+export function readLatestUsage(cwd, sinceMs) {
+  try {
+    const projDir = join(process.env.PIPELINE_CLAUDE_PROJECTS ||
+      join(process.env.USERPROFILE || process.env.HOME || '', '.claude', 'projects'), '');
+    // claude-code naming: EVERY separator becomes its own dash, case KEPT:
+    // 'C:\WorkDev\app' -> 'C--WorkDev-app' (no collapsing of consecutive seps!)
+    const esc = cwd.replace(/\\/g, '-').replace(/[:/]/g, '-').replace(/\s/g, '-');
+    let dir = join(projDir, esc);
+    if (!existsSync(dir)) {
+      // case-insensitive fallback (Windows projects dirs keep original case)
+      try {
+        const hit = readdirSync(projDir).find((n) => n.toLowerCase() === esc.toLowerCase());
+        if (!hit) return null;
+        dir = join(projDir, hit);
+      } catch { return null; }
+    }
+    let best = null, bestM = 0;
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith('.jsonl')) continue;
+      const p = join(dir, f);
+      const m = statSync(p).mtimeMs;
+      if (m > bestM) { bestM = m; best = p; }
+    }
+    if (!best || bestM < sinceMs) return null;
+    let inTok = 0, outTok = 0, cacheRead = 0, msgs = 0;
+    for (const line of readFileSync(best, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      let row; try { row = JSON.parse(line); } catch { continue; }
+      const u = row?.message?.usage;
+      if (u) {
+        msgs += 1;
+        inTok += u.input_tokens || 0;
+        outTok += u.output_tokens || 0;
+        cacheRead += u.cache_read_input_tokens || 0;
+      }
+    }
+    if (!msgs) return null;
+    return { transcript: best, msgs, input_tokens: inTok, output_tokens: outTok, cache_read: cacheRead };
+  } catch { return null; }
+}
 
 export function watch(intervalMs = 4000) {
   const b = base();

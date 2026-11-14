@@ -59,7 +59,8 @@ function parseCommitMd(text) {
   const pr = text.match(/^PR TITLE:\s*(.+)$/m)?.[1]?.trim();
   const add = (text.match(/^ADD LIST:\n([\s\S]*?)\nPR TITLE:/m)?.[1] || '')
     .split('\n').map((l) => l.trim()).filter(Boolean);
-  return { msg, pr, add };
+  const body = (text.match(/^PR BODY:\n([\s\S]*)$/m)?.[1] || '').trim();
+  return { msg, pr, add, body };
 }
 async function committerStep(_name, report, cwd, rid) {
   // derive the name from the report's BASENAME (the report may be passed as
@@ -73,11 +74,15 @@ async function committerStep(_name, report, cwd, rid) {
   const cm = `docs/plans/${name}-commit.md`;
   if (!existsSync(join(cwd, cm))) { console.log('(no commit artifact produced)'); return; }
   const text = readFileSync(join(cwd, cm), 'utf8');
-  const { msg, pr, add } = parseCommitMd(text);
+  const { msg, pr, add, body } = parseCommitMd(text);
   if (!msg || !add.length) { console.log(text); console.log('(not parseable - commit by hand)'); return; }
-  console.log('\nCOMMIT: ' + msg);
+  // terminal = first source: the whole commit proposal lives HERE (the file
+  // stays as trace evidence); read it, then one Y/N decides.
+  console.log('\n--- COMMIT PROPOSAL (read me) ---');
+  console.log('COMMIT: ' + msg);
   console.log('FILES:\n  ' + add.join('\n  '));
   console.log('PR TITLE: ' + (pr || msg));
+  if (body) console.log('\nPR BODY:\n' + body);
   if (!isY(await ask('\nAccept and commit? (Y/N): '))) { console.log('skipped - commit by hand'); trace.ev(rid, { event: 'gate', gate: 'commit', result: 'N' }); return; }
   trace.ev(rid, { event: 'gate', gate: 'commit', result: 'Y' });
   const wtRef = String(cwd) === process.cwd() ? '(--no-wt)' : (String(cwd).replace(/\\/g,'/').startsWith('/') ? cwd : join(process.cwd(), cwd));

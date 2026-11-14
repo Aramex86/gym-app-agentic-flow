@@ -9,7 +9,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { loadEnv } from './env.mjs';
-import { ev, snap, promptSnap } from './trace.mjs';
+import { ev, snap, promptSnap, hopTail, reportDigest, readLatestUsage } from './trace.mjs';
 loadEnv();    // reads repo .env (PIPELINE_CLI, OLLAMA_*, RUN_MODEL)  system env wins
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -125,7 +125,9 @@ const cmds = {
     // budget cap: each hop gets a finite number of agentic turns (each turn
     // ~= one model call + tools). Override via PIPELINE_MAX_TURNS env.
     '--max-turns', String(parseInt(process.env.PIPELINE_MAX_TURNS || '60', 10)),
-    '--allowedTools', 'Read,Edit,Write,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)'],   // -p = print mode; prompt rides on stdin
+    '--allowedTools', 'Read,Edit,Write,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)',
+    ...(process.env.PIPELINE_OUT_FORMAT === 'json' ? ['--output-format', 'json'] : []),
+  ],   // -p = print mode; prompt rides on stdin
 };
 const argv = cmds[cli] || exit(3, `config error: unknown PIPELINE_CLI "${cli}" (opencode | claude)`);
 // insert --allowedTools (per-role or default) and global --disallowedTools
@@ -191,10 +193,11 @@ if (cli === 'claude') {
 // --- claude runner: async spawn + heartbeat "working Ns" + log capture ---
 // print-mode output is silent until done; the timer line proves liveness.
 // Full CLI output lands in .pipeline-last-run.log (repo root) for inspection.
+const LOG_PATH = path.join(process.cwd(), '.pipeline-last-run.log');
+
 function runClaudeLive(argv, env, prompt) {
   return new Promise((resolve) => {
-    const logPath = path.join(root, '.pipeline-last-run.log');
-    const logFd = openSync(logPath, 'w');
+    const logFd = openSync(LOG_PATH, 'w');
     const p = spawn('claude', argv, { cwd: process.cwd(), env, stdio: ['pipe', logFd, logFd] });
     p.stdin.write(prompt);
     p.stdin.end();
@@ -258,6 +261,28 @@ if (runIsAsync) {
   if (RID) {
     snap(RID, out);
     ev(RID, { event: 'hop_end', role, model, cwd: cwdNow, branch, exit: code ?? 1, duration_ms: Date.now() - T0, artifact: (out && existsSync(out)) ? out : null, note: (code === 130) ? 'kill-switch' : (code === 124 ? 'timeout' : undefined) });
+    hopTail(RID, role, LOG_PATH);                                   // v3: keep stdout tail for forensics
+    reportDigest(RID, role, out && existsSync(out) ? out : null);  // v3: gates + bug digest
+    if (code === 0) {                                                // v3 token telemetry
+      // Path A: stdout result JSON (--output-format json) - has usage + total_cost_usd
+      let used = null;
+      try {
+        const txt = readFileSync(LOG_PATH, 'utf8');
+        const lines = txt.split('\n').filter((l) => l.includes('"type":"result"'));
+        const last = lines.length ? JSON.parse(lines[lines.length - 1]) : null;
+        if (last?.usage && (last.usage.input_tokens || last.usage.output_tokens)) {
+          used = { input_tokens: last.usage.input_tokens || 0, output_tokens: last.usage.output_tokens || 0, cache_read: last.usage.cache_read_input_tokens || 0, msgs: last.num_turns || 1, cost_usd: last.total_cost_usd };
+          if (last.api_error_status) ev(RID, { event: 'hop_api_error', role, status: last.api_error_status });
+        }
+      } catch {}
+      // Path B: transcript fallback (ccusage's own source)
+      if (!used) used = readLatestUsage(cwdNow, T0 - 2000);
+      if (used) {
+        const u = used;
+        ev(RID, { event: 'hop_usage', role, model, msgs: u.msgs, input_tokens: u.input_tokens, output_tokens: u.output_tokens, cache_read: u.cache_read, cost_usd: u.cost_usd != null ? u.cost_usd : null, source: u.cost_usd != null ? 'stdout' : 'transcript' });
+        console.log(rc(`[run-agent] tokens ${role}: in ${u.input_tokens + (u.cache_read || 0)} / out ${u.output_tokens} (${u.msgs} api msgs)${u.cost_usd != null ? ' · $' + u.cost_usd.toFixed(4) : ''}`));
+      }
+    }
   }
   if (code === -1) process.exit(2);
   if (code !== 0) exit(code ?? 1, `[run-agent] CLI exited ${code} (log: .pipeline-last-run.log)`);

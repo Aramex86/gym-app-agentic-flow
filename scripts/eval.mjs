@@ -150,11 +150,32 @@ const totalS = (Date.now() - t0) / 1000;
 const timeOk = expected.budget_time_s === 0 || totalS <= expected.budget_time_s;
 const pass = verdict === expected.verdict && filesOk && scopeOk && timeOk && fixRounds <= budgetRounds;
 
+
+// ---- token/cost rollup (usage events emitted by run-agent per hop) ----
+let tokIn = 0, tokOut = 0, tokSum = null;
+try {
+  const events = readFileSync(join(base(), rid, 'trace.jsonl'), 'utf8').split('\n').filter(Boolean)
+    .map((l) => JSON.parse(l)).filter((e) => e.event === 'hop_usage');
+  tokIn = events.reduce((a, e) => a + (e.input_tokens + e.cache_read || 0), 0);
+  tokOut = events.reduce((a, e) => a + (e.output_tokens || 0), 0);
+  if (tokIn || tokOut) tokSum = { input: tokIn, output: tokOut };
+} catch {}
+let costStr = 'n/a';
+try {
+  const pricing = yamlObj?.pricing || null;
+  if (pricing && tokSum) {
+    let acc = 0;
+    for (const e of Object.values(pricing)) {
+      acc += (tokSum.input * Number(e.in || 0) + tokSum.output * Number(e.out || 0)) / 1e6;
+    }
+    costStr = '$' + acc.toFixed(3);
+  }
+} catch {}
 // ---- scoreboard ----
 const resultsDir = 'evals/results';
 mkdirSync(resultsDir, { recursive: true });
 appendFileSync(join(resultsDir, 'scoreboard.jsonl'), JSON.stringify(
-  { date: new Date().toISOString().slice(0, 10), task: name, verdict, files_ok: filesOk, scope_ok: scopeOk, fix_rounds: fixRounds, seconds: Math.round(totalS) }) + '\n');
+  { date: new Date().toISOString().slice(0, 10), task: name, verdict, files_ok: filesOk, scope_ok: scopeOk, fix_rounds: fixRounds, seconds: Math.round(totalS), tokens: tokSum, cost_usd: costStr === 'n/a' ? null : costStr }) + '\n');
 
 const rows = readFileSync(join(resultsDir, 'scoreboard.jsonl'), 'utf8').split('\n').filter(Boolean)
   .map((l) => JSON.parse(l)).sort((a, z) => (a.task + a.date).localeCompare(z.task + z.date));
@@ -182,6 +203,7 @@ console.log(` Files      : ${filesOk ? '\u2705 all present' : '\u274c missing: '
 console.log(` Scope      : ${scopeOk ? '\u2705 clean' : '\u274c touched forbidden: ' + violated.join(', ')}`);
 console.log(` Fix rounds : ${fixRounds} / ${budgetRounds}`);
 console.log(` Time       : ${timeOk ? '\u2705 ' : '\u274c '}${mmss(totalS)} (budget ${mmss(expected.budget_time_s || 0)})`);
+  console.log(` Tokens     : ${tokSum ? tokSum.input.toLocaleString('en-US') + ' in / ' + tokSum.output.toLocaleString('en-US') + ' out' : 'n/a'}        Cost: ${costStr}`);
 console.log(` Report     : work/${slug}/docs/plans/${slug}-report.md`);
 console.log(` Board      : evals/results/scoreboard.md`);
 console.log(bar + '\n');
