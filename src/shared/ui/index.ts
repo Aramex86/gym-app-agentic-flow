@@ -9,5 +9,7 @@ export { DisclaimerBanner } from "./atoms/DisclaimerBanner";
 export type { DisclaimerBannerProps, DisclaimerVariant } from "./atoms/DisclaimerBanner";
 export { SearchInput } from "./atoms/SearchInput";
 export type { SearchInputProps } from "./atoms/SearchInput";
+export { PromptInput } from "./atoms/PromptInput";
+export type { PromptInputProps } from "./atoms/PromptInput";
 export { ToggleChip } from "./atoms/ToggleChip";
 export type { ToggleChipProps } from "./atoms/ToggleChip";

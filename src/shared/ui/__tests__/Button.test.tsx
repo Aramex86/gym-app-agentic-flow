@@ -30,6 +30,18 @@ describe("shared/ui atoms Button — behavior", () => {
       render(<Button variant="secondary">Log</Button>),
     ).toContain("var(--surface-lifted)");
   });
+
+  it("disables the native button and shows the not-allowed cursor when disabled", () => {
+    const html = render(
+      <Button disabled variant="secondary">
+        Send
+      </Button>,
+    );
+    expect(html).toContain("disabled=");
+    expect(html).toContain("not-allowed");
+    // Enabled buttons keep the original pointer cursor.
+    expect(render(<Button>Send</Button>)).toContain("pointer");
+  });
 });
 
 describe("shared/ui atoms Button — source guards (ADR-0001 D5)", () => {
