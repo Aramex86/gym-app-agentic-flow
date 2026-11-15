@@ -11,5 +11,7 @@ export { SearchInput } from "./atoms/SearchInput";
 export type { SearchInputProps } from "./atoms/SearchInput";
 export { PromptInput } from "./atoms/PromptInput";
 export type { PromptInputProps } from "./atoms/PromptInput";
+export { StatCard } from "./atoms/StatCard";
+export type { StatCardProps, StatCardTone } from "./atoms/StatCard";
 export { ToggleChip } from "./atoms/ToggleChip";
 export type { ToggleChipProps } from "./atoms/ToggleChip";
