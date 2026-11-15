@@ -181,37 +181,6 @@ Full decode manual: docs/eval-reading-guide.md.
   committer artifact.
 - DONE on the board (Notion) - human only; agents own To Do/In Progress/In Review.
 
-
-## 11. MCP transport (agents walk into services, by contract)
-
-- Repo declares servers in `mcp/mcp.json` (same format as VS Code mcp.json):
-  keys via `${VAR}` placeholders, values in `.env` (never in the file, never
-  in chat - GitHub push protection will block and that is a FRIEND).
-- run-agent passes `--mcp-config <abs path>` to every hop automatically
-  (env `PIPELINE_MCP_CONFIG` overrides the path).
-- Role gates WHICH MCP tools may be called: add `mcp__<server>__<tool>`
-  entries to the role's `tools:` line (same mechanics as Bash rights).
-- Role grants today: developer <- stitch read-only (list/get/download);
-  write tools of design systems are NOT granted to agents.
-- Health check without a model: `claude mcp list` (global config); the
-  factory check is `claude -p "..." --mcp-config mcp\mcp.json --model <id> --max-turns 1`
-  (needs env loaded - see load-env.ps1).
-- Known pitfall: Claude Code ignores custom headers on some hosted MCP
-  servers (bug #41664) -> if auth fails with OAuth/DCR text, bridge via a
-  local stdio wrapper.
-
-## 12. Notion door (mechanical task entry, no LLM)
-
-- `pnpm flow:next` pulls ONE oldest To Do card -> `tasks/<slug>.md`,
-  flips the card to In Progress (agents own To Do/In Progress; Done human-only).
-- `pnpm flow notion:<card-id>` resolves a card BY ID (user says the address,
-  the door does retrieval) and starts the circle.
-- `--dry` preview only; without it the door writes and flips - treat it as a
-  state-changing command.
-- Card body = Description rich_text property (DB schema includes it) +
-  page children blocks; door merges both into the normalized task file.
-- Data: `NOTION_INTEGRATION_TOKEN` env only; default DB = project backlog.
-
 ## 11. Where the docs live in the repo
 
 ```

@@ -9,7 +9,7 @@
 //   pnpm flow:fix                        newest FAIL report -> fix rounds (max 3) -> PASS
 // Plain Node. No PowerShell, no ExecutionPolicy issues.
 
-import { existsSync, readFileSync, readdirSync, appendFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, appendFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, resolve, isAbsolute, basename as pathBasename } from 'node:path';
 import readline from 'node:readline/promises';
@@ -43,12 +43,7 @@ const newestReport = (dir = 'docs/plans') => {
   return files[files.length - 1] ?? null;
 };
 
-const verdict = (file, cwd) => {
-  // PASS/FAIL may sit under a markdown heading ("# Report ...\n\nPASS") -
-  // word-search the first 5 lines, same law as eval.mjs (heading-parity fix)
-  const head = readFileSync(file, 'utf8').split('\n').slice(0, 5).join('\n');
-  return (head.match(/\b(PASS|FAIL)\b/i)?.[1] || 'FAIL').toUpperCase();
-};
+const verdict = (file, cwd) => (readFileSync(file, 'utf8').split('\n')[0] || '').trim().toUpperCase();
 
 const ROLE_COLOR = { planner: '\x1b[32m', developer: '\x1b[38;5;208m', tester: '\x1b[36m', committer: '\x1b[35m' };
 const clog = (role, text) => console.log((ROLE_COLOR[role] || '') + text + '\x1b[0m');
@@ -284,10 +279,6 @@ if (opts.sandbox) {
     mkdirSync(join(wt, task, '..'), { recursive: true });
     spawnSync(process.execPath, ['-e', `require('fs').copyFileSync(${JSON.stringify(task)}, ${JSON.stringify(dst)})`]);
   }
-  // MCP: .mcp.json is untracked -> never lands in a fresh worktree by itself.
-  // Copy it in, or run-agent (running from the sandbox) silently loses MCP.
-  const mcpSrc = join(process.cwd(), '.mcp.json');
-  if (existsSync(mcpSrc)) { const dstM = join(wt, '.mcp.json'); if (!existsSync(dstM)) copyFileSync(mcpSrc, dstM); console.log('mcp config copied into sandbox'); }
 }
 
 const inWt = (p) => join(wt, p);
