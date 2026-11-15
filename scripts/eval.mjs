@@ -162,14 +162,11 @@ try {
 } catch {}
 let costStr = 'n/a';
 try {
-  const pricing = yamlObj?.pricing || null;
-  if (pricing && tokSum) {
-    let acc = 0;
-    for (const e of Object.values(pricing)) {
-      acc += (tokSum.input * Number(e.in || 0) + tokSum.output * Number(e.out || 0)) / 1e6;
-    }
-    costStr = '$' + acc.toFixed(3);
-  }
+  // run-agent already bills per hop (cost_usd in hop_usage events) - just sum it
+  const events = readFileSync(join(base(), rid, 'trace.jsonl'), 'utf8').split('\n').filter(Boolean)
+    .map((l) => JSON.parse(l)).filter((e) => e.event === 'hop_usage');
+  const acc = events.reduce((a, e) => a + (Number(e.cost_usd) || 0), 0);
+  if (acc > 0) costStr = '$' + acc.toFixed(4);
 } catch {}
 // ---- scoreboard ----
 const resultsDir = 'evals/results';

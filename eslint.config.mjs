@@ -1,4 +1,6 @@
-'use strict';
+'use strict';;
+// For more info, see https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
+import storybook from "eslint-plugin-storybook";
 
 /**
  * FSAA — ESLint flat config (Vite template, ESLint 9).
@@ -88,54 +90,47 @@ const featureZones = () => {
   return zones;
 };
 
-export default [
-  {
-    files: ['**/*.{ts,tsx}'],
-    languageOptions: {
-      parser: tsParser,
-      parserOptions: { ecmaVersion: 2022, sourceType: 'module', ecmaFeatures: { jsx: true } },
-    },
-    plugins: {
-      '@typescript-eslint': tsPlugin,
-      import: importPlugin,
-    },
-    settings: {
-      'import/resolver': {
-        typescript: { alwaysTryTypes: true, project: [path.join(__dirname, 'tsconfig.json')] },
-      },
-    },
-    rules: {
-      'import/no-cycle': ['error', { maxDepth: '∞' }],
+export default [{
+  files: ['**/*.{ts,tsx}'],
+  languageOptions: {
+    parser: tsParser,
+    parserOptions: { ecmaVersion: 2022, sourceType: 'module', ecmaFeatures: { jsx: true } },
+  },
+  plugins: {
+    '@typescript-eslint': tsPlugin,
+    import: importPlugin,
+  },
+  settings: {
+    'import/resolver': {
+      typescript: { alwaysTryTypes: true, project: [path.join(__dirname, 'tsconfig.json')] },
     },
   },
-  {
-    files: ['src/shared/**/*.{ts,tsx}'],
-    rules: sharedRules,
+  rules: {
+    'import/no-cycle': ['error', { maxDepth: '∞' }],
   },
-  {
-    files: ['src/entities/**/*.{ts,tsx}'],
-    rules: entitiesRules,
+}, {
+  files: ['src/shared/**/*.{ts,tsx}'],
+  rules: sharedRules,
+}, {
+  files: ['src/entities/**/*.{ts,tsx}'],
+  rules: entitiesRules,
+}, {
+  files: ['src/features/**/*.{ts,tsx}'],
+  rules: {
+    ...featuresRules,
+    'import/no-restricted-paths': ['error', { zones: featureZones() }],
   },
-  {
-    files: ['src/features/**/*.{ts,tsx}'],
-    rules: {
-      ...featuresRules,
-      'import/no-restricted-paths': ['error', { zones: featureZones() }],
-    },
+}, {
+  /* src/pages: may import features + shared (composition of scenarios) */
+  files: ['src/pages/**/*.{ts,tsx}'],
+  rules: {
+    'no-restricted-imports': [
+      'error',
+      { patterns: [{ group: ['**/app/**', '@app/**'], message: appMessage }] },
+    ],
   },
-  {
-    /* src/pages: may import features + shared (composition of scenarios) */
-    files: ['src/pages/**/*.{ts,tsx}'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        { patterns: [{ group: ['**/app/**', '@app/**'], message: appMessage }] },
-      ],
-    },
-  },
-  /* eslint-plugin-fsaa 0.1.1 — the same contract as npm lint rules.
-     Single source of truth: the npm package implements the checks; this
-     config wires fsaa/recommended in, so `pnpm lint` and drift-check share
-     one rule implementation. */
-  ...fsaaPlugin.configs.recommended,
-];
+}, /* eslint-plugin-fsaa 0.1.1 — the same contract as npm lint rules.
+   Single source of truth: the npm package implements the checks; this
+   config wires fsaa/recommended in, so `pnpm lint` and drift-check share
+   one rule implementation. */
+...fsaaPlugin.configs.recommended, ...storybook.configs["flat/recommended"]];

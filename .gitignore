@@ -12,3 +12,6 @@ tasks/*
 docs/plans/
 
 /work/
+
+*storybook.log
+storybook-static
