@@ -7,7 +7,7 @@ import { BrowserRouter } from "react-router-dom";
 import { AppRouter } from "@pages/router";
 import "@app/globals.css";
 import { SITE } from "@shared/config/site";
-import { AppShell } from "@shared/ui";
+import { AppChrome } from "@features/app-shell";
 
 export function TopBar() {
   return (
@@ -42,9 +42,12 @@ export function TopBar() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <AppShell title={SITE.name}>
+      {/* App chrome (telemetry header + bottom nav + healthcheck cadence)
+          lives in the app-shell feature — plan §4: src/app may not own
+          scenario logic; importing a feature from app is downward. */}
+      <AppChrome>
         <AppRouter />
-      </AppShell>
+      </AppChrome>
     </BrowserRouter>
   </StrictMode>,
 );

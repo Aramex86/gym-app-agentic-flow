@@ -9,6 +9,7 @@
 import { useState } from "react";
 import type { JSX } from "react";
 import { Button, PromptInput } from "@shared/ui";
+import { isComposerAvailable, useComposerStatus } from "@entities/composer";
 import { getActiveProfile } from "@entities/profile";
 import { recomposePlan } from "@entities/training-plan";
 import type { TrainingPlan } from "@entities/training-plan";
@@ -45,13 +46,18 @@ const errorStyle = {
 export function PlanRecompose(props: PlanRecomposeProps): JSX.Element {
   const [instruction, setInstruction] = useState("");
   const [status, setStatus] = useState<"idle" | "pending" | "error">("idle");
-  const sendDisabled = status === "pending" || instruction.trim().length === 0;
+  // Plan A3 — only a CONFIRMED healthcheck failure (offline) disables the
+  // composer CTA; unknown/online follow the existing empty/pending rules.
+  const composerStatus = useComposerStatus();
+  const composerOffline = !isComposerAvailable(composerStatus);
+  const sendDisabled = composerOffline || status === "pending" || instruction.trim().length === 0;
 
   async function handleSend(): Promise<void> {
     const trimmed = instruction.trim();
     // WHY: plan A4 + A6 — whitespace input sends nothing; one request per
     // send click, no queue (early return while pending; button also disabled).
-    if (trimmed.length === 0 || status === "pending") return;
+    // Plan A3 — the same offline guard here backs the disabled button up.
+    if (composerOffline || trimmed.length === 0 || status === "pending") return;
     setStatus("pending");
     try {
       const nextPlan = await recomposePlan({
