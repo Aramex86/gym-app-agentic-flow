@@ -3,6 +3,8 @@ import { ProjectsPage } from './ProjectsPage';
 import { OrdersPage } from './OrdersPage';
 import { HomePage } from './HomePage';
 import { ProgressPage } from './ProgressPage';
+import { LoggerPage } from './LoggerPage';
+import { OnboardingPage } from './OnboardingPage';
 
 /* src/pages — FSAA pages layer, Vite template.
    In the Next.js template this layer IS the App Router (route files).
@@ -16,6 +18,10 @@ export function AppRouter() {
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/orders" element={<OrdersPage />} />
       <Route path="/progress" element={<ProgressPage />} />
+      {/* Placeholder destinations for the bottom nav (plan A5); the real
+          Logger/Onboarding scenario cards replace these page bodies. */}
+      <Route path="/logger" element={<LoggerPage />} />
+      <Route path="/onboarding" element={<OnboardingPage />} />
     </Routes>
   );
 }

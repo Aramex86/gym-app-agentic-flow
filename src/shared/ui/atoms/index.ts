@@ -1,6 +1,12 @@
 /* shared/ui/atoms — barrel. Atoms stay dumb and token-only (ADR-0001 D5). */
 
 export { Button } from "./Button";
+export { NavTab } from "./NavTab";
+export type { NavTabProps } from "./NavTab";
+export { StatusIndicator } from "./StatusIndicator";
+export type { StatusIndicatorProps, StatusTone } from "./StatusIndicator";
+export { EmptyState } from "./EmptyState";
+export type { EmptyStateProps } from "./EmptyState";
 export type { ButtonProps } from "./Button";
 export { DisclaimerBanner } from "./DisclaimerBanner";
 export type { DisclaimerBannerProps, DisclaimerVariant } from "./DisclaimerBanner";
