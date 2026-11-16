@@ -6,6 +6,14 @@
       "headers": {
         "X-Goog-Api-Key": "${STITCH_KEY}"
       }
+    },
+    "notion": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@notionhq/notion-mcp-server@latest"],
+      "env": {
+        "OPENAPI_MCP_HEADERS": "{\"Authorization\": \"Bearer ${NOTION_KEY}\", \"Notion-Version\": \"2022-06-28\"}"
+      }
     }
   }
 }

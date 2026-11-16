@@ -173,6 +173,8 @@ async function fixLoop(opts) {
     if (verdict(inCwd(newestReport(join(base, 'docs/plans')))).startsWith('PASS')) {
       console.log(`PASS after ${round} fix round(s).`);
       await committerStep(baseNm, report, cwd, rid);
+      const rid3 = rid ?? null;
+      if (rid3 && existsSync(join('scripts', 'report.mjs'))) spawnSync(process.execPath, ['scripts/report.mjs', rid3], { stdio: 'inherit' });
       return;
     }
     console.log(`still FAIL after round ${round} - looping`);
@@ -316,3 +318,8 @@ trace.ev(rid, { event: 'verdict', result: verdict(inWt(report)).startsWith('FAIL
 if (verdict(inWt(report)).startsWith('FAIL')) exit(1, '\nFAIL detected - auto fix loop:  pnpm flow:fix');
 console.log('PASS.');
 await committerStep(name, report, wt, rid);
+// HTML report: zero model tokens, best-effort (silently skipped if missing)
+if (existsSync(join('scripts', 'report.mjs'))) {
+  spawnSync(process.execPath, ['scripts/report.mjs', rid], { stdio: 'inherit' });
+  console.log('html report: .pipeline/reports/' + rid + '.html');
+}
