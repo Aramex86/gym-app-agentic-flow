@@ -8,9 +8,10 @@
    src/entities/training-plan/__tests__/api.test.ts. */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, act } from "@testing-library/react";
 import { PlanRecompose } from "../index";
 import { getActiveProfile } from "@entities/profile";
+import { setComposerStatus, resetComposerStatus } from "@shared/config/composerStatus";
 import { SAMPLE_PLAN } from "@shared/config/plan.sample";
 import planRecomposeSource from "../ui/PlanRecompose.tsx?raw";
 import type { TrainingPlan } from "@entities/training-plan";
@@ -67,6 +68,9 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  // Composer store is module-global (shell scenario card): tests must not
+  // leak a status into the next test's Send button (plan §6, A3).
+  resetComposerStatus();
 });
 
 describe("features plan-recompose — render (plan A1 naming)", () => {
@@ -204,6 +208,54 @@ describe("features plan-recompose — send behavior", () => {
     // not duplicated — plan A5 fixed copy, never raw composer messages).
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(screen.getAllByRole("alert").length).toBe(1);
+  });
+});
+
+describe("features plan-recompose — composer offline guard (plan A3)", () => {
+  it("offline disables Send even with valid text, and a click sends NOTHING", () => {
+    vi.stubGlobal("fetch", fetchMock);
+    setComposerStatus("offline");
+
+    renderFeature();
+    fireEvent.change(instructionBox(), { target: { value: "add cardio" } });
+    expect(sendButton().disabled).toBe(true);
+
+    fireEvent.click(sendButton());
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("unknown and online keep Send enabled with valid text (no CTA gate)", () => {
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderFeature();
+    fireEvent.change(instructionBox(), { target: { value: "add cardio" } });
+    expect(sendButton().disabled).toBe(false);
+
+    cleanup();
+    setComposerStatus("online");
+    renderFeature();
+    fireEvent.change(instructionBox(), { target: { value: "add cardio" } });
+    expect(sendButton().disabled).toBe(false);
+  });
+
+  it("a LIVE change to offline disables Send without a remount (shared store)", () => {
+    vi.stubGlobal("fetch", fetchMock);
+    renderFeature();
+    fireEvent.change(instructionBox(), { target: { value: "add cardio" } });
+    expect(sendButton().disabled).toBe(false);
+
+    // Healthcheck result lands while the plan screen is open; the store
+    // notification is a React update → wrap in act (plan §6 wording).
+    act(() => {
+      setComposerStatus("offline");
+    });
+    expect(sendButton().disabled).toBe(true);
+
+    // Recovery re-enables (the guard is the store, not a one-way latch).
+    act(() => {
+      setComposerStatus("online");
+    });
+    expect(sendButton().disabled).toBe(false);
   });
 });
 
