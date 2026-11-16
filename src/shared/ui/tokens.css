@@ -26,6 +26,8 @@
   --accent-amber-dim: #ffba20;
   --accent-glow-volt: 0px 0px 16px rgba(212, 255, 0, 0.15);
   --accent-glow-amber: 0px 0px 16px rgba(255, 184, 0, 0.15);
+  --surface-glass: rgba(16, 20, 26, 0.85);
+  --accent-glow-teal: 0 0 8px rgba(67, 255, 187, 0.8);
 
   /* Typography */
   --font-heading: "Space Grotesk", system-ui, sans-serif;
