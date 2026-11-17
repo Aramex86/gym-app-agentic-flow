@@ -1,6 +1,9 @@
 // scripts/run-agent.mjs  role router for the multi-agent pipeline.
 // Resolution: RUN_MODEL env > role frontmatter model > pipeline.yaml table.
-// Spawn: chosen CLI (env PIPELINE_CLI = opencode | claude) headless in cwd.
+// (rail #2 Copilot: > copilot-table agents-pipeline.copilot.yaml > built-in defaults)
+// Spawn: chosen CLI (env PIPELINE_CLI = opencode | claude | copilot) headless in cwd.
+// Rail #2 (copilot, 2026-11-17 combat probe): copilot -p OK --silent id=claude-sonnet-5.5
+//   billing = premium requests; telemetry via --usage-output-file -> hop_usage.
 // Key safety: never prints OLLAMA_API_KEY (masked as ***).
 // No npm dependencies. Node >= 20.
 
@@ -16,9 +19,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const exit = (code, msg) => { if (msg) console.error(msg); process.exit(code); };
 
 // --- load routing table (agents-pipeline.yaml, flat "role: model" under "roles:") ---
-function routingTable() {
-  const cfg = path.join(root, 'agents-pipeline.yaml');
-  if (!existsSync(cfg)) exit(3, `config error: agents-pipeline.yaml not found in ${root}`);
+function routingTableFrom(cfg) {
+  if (!existsSync(cfg)) exit(3, `config error: ${cfg} not found`);
   const raw = readFileSync(cfg, 'utf8');
   const roles = {};
   let inRoles = false;
@@ -33,6 +35,9 @@ function routingTable() {
     }
   }
   return roles;
+}
+function routingTable() {
+  return routingTableFrom(path.join(root, 'agents-pipeline.yaml'));
 }
 
 // --- role contract: frontmatter "tools: ..." (per-role allowlist) ---
@@ -63,6 +68,19 @@ function getRoleFile(role) {
 }
 
 
+// --- rail #2: copilot model table (agents-pipeline.copilot.yaml, same flat format) ---
+function copilotTable() {
+  const cfg = path.join(root, 'agents-pipeline.copilot.yaml');
+  if (!existsSync(cfg)) return null;
+  return routingTableFrom(cfg);
+}
+const COPILOT_DEFAULTS = {
+  planner: 'claude-opus-5.5',         // long context for plans (1M on Medium?1M)
+  developer: 'gpt-5.3-codex',         // code specialist
+  tester: 'claude-sonnet-5.5',        // verified hop id (probe #1, combat)
+  committer: 'claude-haiku-5.5',      // mechanical, cheap
+};
+
 // --- resolve model ---
 // role colors (ANSI): planner=green, developer=dark orange, tester=cyan
 const RESET = '\x1b[0m';
@@ -79,9 +97,16 @@ for (let k = 1; k < rawArgs.length; k++) {
   else ctxParts.push(rawArgs[k]);
 }
 if (!role) exit(3, 'usage: node scripts/run-agent.mjs <role> [-i in-file] [-o out-file] "context"');
-const table = routingTable();
-const model = process.env.RUN_MODEL || contractModel(role) || table[role]
-  || exit(3, `config error: no model for role "${role}"`);
+const cliEarly = process.env.PIPELINE_CLI || 'opencode';
+const table = cliEarly === 'copilot' ? (copilotTable() || COPILOT_DEFAULTS) : routingTable();
+// FIX 17.11: agents/<role>.md frontmatter `model:` is a RAIL #1 fact
+// (deepseek/glm ids live on Ollama). On rail #2 the contract model must
+// LOSE to the copilot table - otherwise copilot gets "glm-5.3-flash"
+// and dies on an unknown id (first combat hop caught exactly this).
+const model = process.env.RUN_MODEL
+  || (cliEarly === 'copilot' ? null : contractModel(role))
+  || table[role]
+  || exit(3, `config error: no model for role "${role}" (rail: ${cliEarly})`);
 
 // priority: -o > auto-name from -i > env (stale env must never beat the auto name)
 
@@ -105,11 +130,42 @@ const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${ctx}${inFileTxt}${outDirecti
 
 // --- spawn CLI ---
 const cli = process.env.PIPELINE_CLI || 'opencode';
-// claude: prompt rides on STDIN (argv only flags)  multi-line/dash-proof
-const useStdin = cli === 'claude';
+// claude: prompt rides on STDIN (argv only flags) -> multi-line, dash-proof,
+// immune to the ~8k Windows cmdline limit.
+// copilot (COMBAT 17.11): stdin transport DEAD - the CLI answers
+// "No prompt provided. Run in an interactive terminal or provide a prompt
+// with -p or via standard in." while -p is present and stdin is piped.
+// -> rail #2 default = ARGV mode (prompt on -p, Windows ~8k limit applies;
+//    honest-stop guard below). PIPELINE_COPILOT_PROMPT_MODE=stdin is kept
+//    as opt-in for future CLI builds.
+const useStdin = cli === 'claude' || cli === 'copilot';
 const mcpConfigRaw = process.env.PIPELINE_MCP_CONFIG || path.join(root, '.mcp.json');
 const mcpConfigPath = existsSync(mcpConfigRaw) ? path.resolve(mcpConfigRaw) : null;
 const mcpMode = mcpConfigPath ? ['--mcp-config', mcpConfigPath] : [];
+
+// copilot tool rules: claude grammar -> copilot grammar (probe: id kebab,
+// rules like shell(npm:*) per CLI help; file tools read/edit/write).
+function copilotToolList(role, allowedToolsRaw) {
+  return allowedToolsRaw.split(',').map((raw) => raw.trim()).filter(Boolean)
+    .map((x) => {
+      const b = x.match(/^Bash\((.+)\)$/);
+      if (b) return 'shell(' + b[1] + ')';        // Bash(pnpm:*)->shell(pnpm:*)
+      const l = x.toLowerCase();
+      if (l === 'read') return 'read';
+      if (l === 'edit') return 'edit';
+      if (l === 'write') return 'write';
+      return null;                                 // Grep/Glob/Web* -> rail-2 backlog
+    }).filter(Boolean);
+}
+// GLOBAL deny for EVERY role on rail #2 (same law as claude DENY); colon-star
+// exact-syntax verified against help "shell(git:*)".
+function copilotDenyList() {
+  return ['shell(git commit:*)', 'shell(git push:*)', 'shell(git merge:*)',
+          'shell(git checkout:*)', 'shell(git reset:*)', 'shell(git rebase:*)'];
+}
+function mcpMode2() {
+  return mcpConfigPath ? ['--additional-mcp-config', mcpConfigPath] : [];
+}
 
 const cmds = {
   opencode: ['run', prompt, '--model', `ollama-cloud/${model}`],
@@ -125,6 +181,22 @@ const cmds = {
   // the wall is now enforced by the CLI, not only by the contract text.
   // INCIDENT 2026-11-12: an orphaned flow hop burned ~2k minimax calls.
   // Hard caps now bound every hop -> bounded usage per hop, always.
+  // RAIL #2 (copilot CLI v1.0.112): headless batch; prompt via stdin;
+  // budget = --max-ai-credits (env override) + engine HOP_TIMEOUT/kill-switch;
+  // built-in github MCP disabled (hops are local); repo .mcp.json joins via
+  // --additional-mcp-config (no trustedFolders law); telemetry JSON captured.
+  copilot: [
+    '-p',   // prompt rides on stdin (see useStdin note; argv mode flips below)
+    '--model', model,
+    '--silent',                      // stdout = agent text only (verdict law)
+    '--no-custom-instructions',      // AGENTS.md auto-load OFF: contracts flow by file
+    '--disable-builtin-mcps',        // no built-in github MCP on hops
+    '--allow-tool',   // filled per-role below (contractTools -> copilot grammar)
+    '--deny-tool', ...(copilotDenyList()),
+    '--usage-output-file', path.join(process.cwd(), '.pipeline-last-usage.json'),
+    ...(process.env.PIPELINE_MAX_AI_CREDITS ? ['--max-ai-credits', process.env.PIPELINE_MAX_AI_CREDITS] : []),
+    ...mcpMode2(),                   // --additional-mcp-config <abs .mcp.json>
+  ],
   claude: ['-p', '--model', model,
     // budget cap: each hop gets a finite number of agentic turns (each turn
     // ~= one model call + tools). Override via PIPELINE_MAX_TURNS env.
@@ -136,7 +208,19 @@ const cmds = {
 // MCP: repos declare servers in an .mcp.json (or custom path via env) - passed
 // to the CLI; ABSOLUTE path required (hops run in sandbox worktree cwds).
 // Role gates which MCP tools may be called via the SAME tools: frontmatter.
-const argv = cmds[cli] || exit(3, `config error: unknown PIPELINE_CLI "${cli}" (opencode | claude)`);
+const argv = cmds[cli] || exit(3, `config error: unknown PIPELINE_CLI "${cli}" (opencode | claude | copilot)`);
+// rail #2 argv transport: protect against silent cmd.exe truncation
+// v6: direct copilot.exe spawn -> CreateProcess limit ~32k (cmd.exe 8k gone)
+if (cli === 'copilot' && prompt.length > 30000) {
+  exit(3, `rail 2: prompt too long for argv transport (${prompt.length} chars; CreateProcess limit ~32k). Split the task/context or add a plan file instead of a big inline input.`);
+}
+// copilot prompt-mode: stdin (default) vs argv (escape hatch if the CLI build
+// rejects a value-less -p). In argv mode the prompt joins -p on the cmdline:
+// safe for small contracts only (Windows ~8k limit).
+if (cli === 'copilot' && (process.env.PIPELINE_COPILOT_PROMPT_MODE || 'argv') === 'argv') {
+  const i = argv.indexOf('-p');
+  argv.splice(i, 1, '-p', prompt);
+}
 // insert --allowedTools (per-role or default) and global --disallowedTools
 const roleTools = contractTools(role);
 const DEFAULT_TOOLS = 'Read,Edit,Write,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)';
@@ -147,8 +231,19 @@ if (cli === 'claude') {
   if (i !== -1) argv[i + 1] = allowedTools;
   argv.push('--disallowedTools', DENY);
 }
+if (cli === 'copilot') {
+  // rebuild --allow-tool list from the role's frontmatter (fresh, not defaults)
+  const list = copilotToolList(role, allowedTools);
+  const a = argv.indexOf('--allow-tool');
+  if (a !== -1) {
+    let end = a + 1;
+    while (end < argv.length && !/-{2}/.test(argv[end])) end++;
+    argv.splice(a, end - a, '--allow-tool', ...list);
+  }
+}
 const envs = {
   opencode: {},
+  copilot: {},   // auth lives in the CLI login state (copilot login / browser); no tokens here
   claude: {
     ANTHROPIC_BASE_URL: process.env.OLLAMA_BASE_URL || 'https://ollama.com',
     ANTHROPIC_AUTH_TOKEN: '***', // real value injected below, never logged
@@ -205,9 +300,23 @@ const LOG_PATH = path.join(process.cwd(), '.pipeline-last-run.log');
 function runClaudeLive(argv, env, prompt) {
   return new Promise((resolve) => {
     const logFd = openSync(LOG_PATH, 'w');
-    const p = spawn('claude', argv, { cwd: process.cwd(), env, stdio: ['pipe', logFd, logFd] });
-    p.stdin.write(prompt);
-    p.stdin.end();
+    // Windows v6 (combat 17.11): copilot.exe is a REAL binary (VS Code shim
+    // at Copilot CLI path), so spawn it DIRECTLY - no cmd.exe wrapper.
+    // cmd.exe broke multiline argv at newlines (hop #1 hang, probe #4 proof);
+    // CreateProcess handles multiline args and ~32k cmdline limit.
+    const binName = (cli === 'copilot') ? 'copilot' : 'claude';
+    const binArgs = argv;
+    const p = spawn(binName, binArgs, { cwd: process.cwd(), env, stdio: ['pipe', logFd, logFd] });
+    if (cli !== 'copilot' || process.env.PIPELINE_COPILOT_PROMPT_MODE === 'stdin') {
+      p.stdin.write(prompt);
+      p.stdin.end();
+    } else {
+      // stdin.close v5 (combat 17.11): with -p on argv we still OPENED the
+      // stdin pipe and never closed it -> copilot saw a piped stdin without
+      // EOF and blocked forever (probe #1 worked because PowerShell's pipe
+      // closed itself). Closing the pipe sends EOF immediately.
+      p.stdin.end();
+    }
     const HOP_TIMEOUT = parseInt(process.env.PIPELINE_HOP_TIMEOUT || '900', 10) * 1000;
     let done = false;
     p.on('exit', () => { done = true; });
@@ -249,7 +358,7 @@ function runClaudeLive(argv, env, prompt) {
     });
   });
 }
-const runIsAsync = cli === 'claude';
+const runIsAsync = cli === 'claude' || cli === 'copilot';
 
 let RID = process.env.PIPELINE_RUN_ID || null;
 if (!RID) {
@@ -264,7 +373,7 @@ if (RID) {
   promptSnap(RID, role, prompt);
 }
 const T0 = Date.now();
-console.log(rc('[run-agent] waiting for claude (output also in .pipeline-last-run.log)'));
+console.log(rc(`[run-agent] waiting for ${cli} (output also in .pipeline-last-run.log)`));
 // priority: -o > auto-name from -i (freshest) > env (falls back; stale env must
 // never beat the auto name derived from the current input)
 if (runIsAsync) {
@@ -286,6 +395,20 @@ if (runIsAsync) {
           if (last.api_error_status) ev(RID, { event: 'hop_api_error', role, status: last.api_error_status });
         }
       } catch {}
+      // Path C: rail #2 - copilot --usage-output-file JSON (probe #1 shape)
+      if (!used && cli === 'copilot') {
+        try {
+          const up = path.join(cwdNow, '.pipeline-last-usage.json');
+          if (existsSync(up)) {
+            const j = JSON.parse(readFileSync(up, 'utf8'));
+            const mm = (j.modelMetrics && Object.values(j.modelMetrics)[0]) || null;
+            if (mm?.usage) {
+              used = { input_tokens: mm.usage.inputTokens || 0, output_tokens: mm.usage.outputTokens || 0, cache_read: mm.usage.cacheReadTokens || 0, msgs: (mm.usage.reasoningTokens || 0) ? 2 : 1, cost_usd: j.totalPremiumRequestCost };
+              ev(RID, { event: 'hop_rail2_cost', role, model, premium_requests: j.totalPremiumRequestCost, nano_aiu: j.totalNanoAiu });
+            }
+          }
+        } catch {}
+      }
       // Path B: transcript fallback (ccusage's own source)
       if (!used) used = readLatestUsage(cwdNow, T0 - 2000);
       if (used) {
@@ -308,4 +431,4 @@ if (out) {
   if (!existsSync(path.join(process.cwd(), out))) exit(2, `machine gate: expected artifact missing: ${out}`);
   console.log(rc(`[run-agent] artifact ok: ${out}`));
 }
-console.log(rc(`[run-agent] role=${role} model=${model} done`));
+console.log(rc(`[run-agent] role=${role} model=${model} cli=${cli} done`));
