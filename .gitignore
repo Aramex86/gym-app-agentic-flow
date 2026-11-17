@@ -12,3 +12,10 @@ tasks/*
 docs/plans/
 
 /work/
+
+pipeline-last-usage.json
+pipeline-last-run.log
+probe*.json
+run-agent-patched.mjs
+run-agent.bak.mjs
+.pipeline-*
