@@ -1,14 +1,16 @@
-/* src/pages/OnboardingPage — thin FSAA page: composes the shared EmptyState
-   atom. Placeholder for the later Onboarding scenario card (plan A5); no
-   logic, no data access, no styling beyond the atom. */
+/* src/pages/OnboardingPage — thin FSAA page wiring for onboarding scenario.
+   Page owns routing only; onboarding behavior remains in @features/onboarding. */
 
-import { EmptyState } from "@shared/ui";
+import { useNavigate } from "react-router-dom";
+import { Onboarding } from "@features/onboarding";
+import { navSurfaceById } from "@shared/config/nav";
 
+/**
+ * Thin onboarding page that wires feature success to My Plan navigation.
+ * @returns Onboarding feature surface.
+ */
 export function OnboardingPage() {
-  return (
-    <EmptyState
-      title="Onboarding"
-      description="Guided setup arrives in a later card."
-    />
-  );
+  const navigate = useNavigate();
+  const myPlanPath = navSurfaceById("my-plan")?.path ?? "/progress";
+  return <Onboarding onGenerated={() => navigate(myPlanPath)} />;
 }

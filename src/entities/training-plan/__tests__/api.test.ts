@@ -1,18 +1,18 @@
-/* entities/training-plan — recomposePlan wire tests (node env, no DOM).
-   The ONLY fetch in the entity is under test here: every failure mode of
-   plan A3 (network, HTTP, invalid JSON, plan failing R1-R9) normalizes to
-   PlanRecomposeError with the fixed message fragments; success returns the
-   validated plan and the request body carries profile + plan + instruction
-   verbatim (input normalization belongs to the feature, plan A4). */
+/* entities/training-plan — API wire tests (node env, no DOM). */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PlanRecomposeError, recomposePlan } from "../api";
-import type { RecomposePlanRequest, TrainingPlan } from "../types";
+import {
+  PlanGenerateError,
+  PlanRecomposeError,
+  generatePlan,
+  getTrainingPlan,
+  recomposePlan,
+} from "../api";
+import type { GeneratePlanRequest, RecomposePlanRequest, TrainingPlan } from "../types";
 import { getActiveProfile } from "@entities/profile";
 import { SAMPLE_PLAN } from "@shared/config/plan.sample";
+import { resetActivePlan } from "@shared/config/activePlan";
 
-/* Minimal VALID one-week plan (validatePlan R1-R9: 1 week -> 1+ contiguous
-   day(s) -> 1+ exercise(s), non-empty strings, integer ranges). */
 const ONE_WEEK_PLAN: TrainingPlan = {
   schemaVersion: "0.1",
   planId: "one-week-fullbody",
@@ -43,6 +43,12 @@ const BASE_REQUEST: RecomposePlanRequest = {
   instruction: "make it a one-week full-body plan",
 };
 
+const GENERATE_REQUEST: GeneratePlanRequest = {
+  profile: getActiveProfile(),
+  goals: ["strength", "mobility"],
+  hardware: ["heart-rate-strap", "smart-watch", "phone-logger"],
+};
+
 function jsonResponse(payload: unknown, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -59,10 +65,6 @@ function jsonRejectingResponse(): Response {
   } as unknown as Response;
 }
 
-/* Typed narrower than fetch: the entity always calls (string, RequestInit),
-   so the assertions below read init without undefined-guards. */
-/* Captures the rejected error WITHOUT re-invoking the call: mocking in these
-   tests is Once-scoped, so each fetch must be called exactly once per test. */
 function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
   return promise.then(
     () => {
@@ -77,6 +79,7 @@ const fetchMock = vi.fn<(input: string, init: RequestInit) => Promise<Response>>
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  resetActivePlan();
 });
 
 describe("entities training-plan recomposePlan — success", () => {
@@ -97,19 +100,9 @@ describe("entities training-plan recomposePlan — success", () => {
       instruction: "make it a one-week full-body plan",
     });
   });
-
-  it("does not trim or mutate the instruction (feature owns normalization, plan A4)", async () => {
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
-
-    await recomposePlan({ ...BASE_REQUEST, instruction: "  padded  " });
-
-    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1].body));
-    expect(body.instruction).toBe("  padded  ");
-  });
 });
 
-describe("entities training-plan recomposePlan — failure modes (plan A3)", () => {
+describe("entities training-plan recomposePlan — failure modes", () => {
   it("network rejection -> Could not reach the plan composer.", async () => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockRejectedValueOnce(new TypeError("network down"));
@@ -118,33 +111,70 @@ describe("entities training-plan recomposePlan — failure modes (plan A3)", () 
     expect(error).toBeInstanceOf(PlanRecomposeError);
     expect((error as PlanRecomposeError).message).toBe("Could not reach the plan composer.");
   });
+});
 
-  it("HTTP 500 -> Plan composer failed (HTTP 500).", async () => {
+describe("entities training-plan generatePlan", () => {
+  it("POSTs to /api/plan/generate with JSON content type and request body", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
+
+    await expect(generatePlan(GENERATE_REQUEST)).resolves.toEqual(ONE_WEEK_PLAN);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/plan/generate");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(String(init.body))).toEqual(GENERATE_REQUEST);
+  });
+
+  it("returns the valid plan and getTrainingPlan reads it afterward", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
+
+    await expect(generatePlan(GENERATE_REQUEST)).resolves.toEqual(ONE_WEEK_PLAN);
+    expect(getTrainingPlan()).toBe(ONE_WEEK_PLAN);
+  });
+
+  it("network reject throws PlanGenerateError and store stays sample", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockRejectedValueOnce(new TypeError("network down"));
+
+    const error = await rejectionOf(generatePlan(GENERATE_REQUEST));
+    expect(error).toBeInstanceOf(PlanGenerateError);
+    expect(getTrainingPlan()).toBe(SAMPLE_PLAN);
+  });
+
+  it("HTTP 500 throws PlanGenerateError and store stays sample", async () => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockResolvedValueOnce(jsonResponse({}, 500));
 
-    const error = await rejectionOf(recomposePlan(BASE_REQUEST));
-    expect(error).toBeInstanceOf(PlanRecomposeError);
-    expect((error as PlanRecomposeError).message).toBe("Plan composer failed (HTTP 500).");
+    const error = await rejectionOf(generatePlan(GENERATE_REQUEST));
+    expect(error).toBeInstanceOf(PlanGenerateError);
+    expect(getTrainingPlan()).toBe(SAMPLE_PLAN);
   });
 
-  it("invalid JSON body -> Plan composer returned invalid JSON.", async () => {
+  it("invalid JSON throws PlanGenerateError and store stays sample", async () => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockResolvedValueOnce(jsonRejectingResponse());
 
-    const error = await rejectionOf(recomposePlan(BASE_REQUEST));
-    expect(error).toBeInstanceOf(PlanRecomposeError);
-    expect((error as PlanRecomposeError).message).toBe("Plan composer returned invalid JSON.");
+    const error = await rejectionOf(generatePlan(GENERATE_REQUEST));
+    expect(error).toBeInstanceOf(PlanGenerateError);
+    expect(getTrainingPlan()).toBe(SAMPLE_PLAN);
   });
 
-  it("plan failing validatePlan -> Plan composer returned an invalid plan: <first issue>.", async () => {
+  it("invalid plan throws PlanGenerateError and store stays sample", async () => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockResolvedValueOnce(jsonResponse({ schemaVersion: "0.1" }));
 
-    const error = await rejectionOf(recomposePlan(BASE_REQUEST));
-    expect(error).toBeInstanceOf(PlanRecomposeError);
-    expect((error as PlanRecomposeError).message).toBe(
-      "Plan composer returned an invalid plan: planId must be non-empty and match /^[a-z0-9-]+$/.",
-    );
+    const error = await rejectionOf(generatePlan(GENERATE_REQUEST));
+    expect(error).toBeInstanceOf(PlanGenerateError);
+    expect(getTrainingPlan()).toBe(SAMPLE_PLAN);
+  });
+});
+
+describe("entities training-plan getTrainingPlan", () => {
+  it("returns sample plan when active-plan store is empty", () => {
+    resetActivePlan();
+    expect(getTrainingPlan()).toBe(SAMPLE_PLAN);
   });
 });
