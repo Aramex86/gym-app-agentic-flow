@@ -18,8 +18,7 @@ export function AppRouter() {
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/orders" element={<OrdersPage />} />
       <Route path="/progress" element={<ProgressPage />} />
-      {/* Placeholder destinations for the bottom nav (plan A5); the real
-          Logger/Onboarding scenario cards replace these page bodies. */}
+      {/* Logger + Onboarding are real feature surfaces linked from nav ids. */}
       <Route path="/logger" element={<LoggerPage />} />
       <Route path="/onboarding" element={<OnboardingPage />} />
     </Routes>

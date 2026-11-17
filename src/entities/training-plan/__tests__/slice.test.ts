@@ -6,7 +6,9 @@
 import { describe, expect, it } from "vitest";
 import { SAMPLE_PLAN } from "@shared/config/plan.sample";
 import type { PlanWeek } from "@shared/config/plan.schema";
-import { filterPlanWeeksByExerciseName } from "../slice";
+import { getActiveProfile } from "@entities/profile";
+import { TRAINING_GOAL_IDS } from "../types";
+import { buildGeneratePlanRequest, filterPlanWeeksByExerciseName } from "../slice";
 
 const weeks = SAMPLE_PLAN.weeks;
 
@@ -146,5 +148,50 @@ describe("entities/training-plan filterPlanWeeksByExerciseName", () => {
     expect(fixture).toEqual(JSON.parse(snapshot));
     expect(rowCount(matched)).toBe(1);
     expect(unmatched).toEqual([]);
+  });
+});
+
+describe("entities/training-plan buildGeneratePlanRequest", () => {
+  it("orders goals canonically and removes duplicates", () => {
+    const request = buildGeneratePlanRequest(
+      getActiveProfile(),
+      ["mobility", "strength", "mobility"],
+      ["heart-rate-strap", "smart-watch"],
+    );
+    expect(request.goals).toEqual(["strength", "mobility"]);
+    expect(request.goals).toEqual(
+      TRAINING_GOAL_IDS.filter((goal) => ["mobility", "strength"].includes(goal)),
+    );
+  });
+
+  it("keeps profile reference and hardware order", () => {
+    const profile = getActiveProfile();
+    const hardware = ["phone-logger", "heart-rate-strap", "smart-watch"] as const;
+    const request = buildGeneratePlanRequest(profile, ["strength"], hardware);
+    expect(request.profile).toBe(profile);
+    expect(request.hardware).toEqual([...hardware]);
+  });
+
+  it("does not mutate goal or hardware input arrays", () => {
+    const goals = ["mobility", "strength", "strength"] as ("mobility" | "strength")[];
+    const hardware = ["heart-rate-strap", "smart-watch"];
+    const goalsBefore = [...goals];
+    const hardwareBefore = [...hardware];
+
+    const request = buildGeneratePlanRequest(getActiveProfile(), goals, hardware);
+
+    expect(goals).toEqual(goalsBefore);
+    expect(hardware).toEqual(hardwareBefore);
+    expect(request.goals).not.toBe(goals);
+    expect(request.hardware).not.toBe(hardware);
+  });
+
+  it("returns goals: [] for empty input", () => {
+    const request = buildGeneratePlanRequest(
+      getActiveProfile(),
+      [],
+      ["heart-rate-strap", "smart-watch"],
+    );
+    expect(request.goals).toEqual([]);
   });
 });

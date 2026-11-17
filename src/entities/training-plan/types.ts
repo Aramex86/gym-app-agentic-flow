@@ -20,3 +20,23 @@ export interface RecomposePlanRequest {
   plan: TrainingPlan;
   instruction: string;
 }
+
+/** Canonical goal ids; payload goal order follows this list. */
+export const TRAINING_GOAL_IDS = [
+  "strength",
+  "hypertrophy",
+  "endurance",
+  "fat-loss",
+  "mobility",
+] as const;
+
+/** Stable goal ids used by onboarding goal selection and payload wiring. */
+export type TrainingGoalId = (typeof TRAINING_GOAL_IDS)[number];
+
+/** Wire request for POST /api/plan/generate. */
+export interface GeneratePlanRequest {
+  profile: UserProfile;
+  goals: TrainingGoalId[];
+  /** Ids of tracked hardware sources shown in the hardware map. */
+  hardware: string[];
+}
