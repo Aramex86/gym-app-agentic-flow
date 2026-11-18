@@ -2,7 +2,7 @@
    plan.schema.ts (mirrors docs/contracts/plan-schema.md §§3-5) stays the
    single source of truth — the entity competes with nothing. */
 
-import type { UserProfile } from "@entities/profile";
+import type { OrthopedicLimitationId, UserProfile } from "@entities/profile";
 import type { TrainingPlan } from "@shared/config/plan.schema";
 
 export type {
@@ -33,10 +33,20 @@ export const TRAINING_GOAL_IDS = [
 /** Stable goal ids used by onboarding goal selection and payload wiring. */
 export type TrainingGoalId = (typeof TRAINING_GOAL_IDS)[number];
 
+/** Orthopedic selections owned by the onboarding feature. */
+export interface OrthopedicSelection {
+  /** Selected limitation ids in arbitrary order; canonicalized on build. */
+  limitations: readonly OrthopedicLimitationId[];
+  /** Raw free-form caution; sent verbatim, never trimmed. */
+  caution: string;
+}
+
 /** Wire request for POST /api/plan/generate. */
 export interface GeneratePlanRequest {
   profile: UserProfile;
   goals: TrainingGoalId[];
   /** Ids of tracked hardware sources shown in the hardware map. */
   hardware: string[];
+  /** Verbatim free-form safety caution from onboarding; "" when none. */
+  caution: string;
 }
