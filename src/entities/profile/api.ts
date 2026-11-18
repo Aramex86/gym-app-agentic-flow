@@ -5,10 +5,10 @@
    it do not change. */
 
 import type { UserProfile } from "./types";
-import { DEFAULT_LIFESTYLE_PROFILE } from "./types";
+import { DEFAULT_LIFESTYLE_PROFILE, DEFAULT_ORTHOPEDIC_PROFILE } from "./types";
 
 // WHY: no profile source exists in this worktree yet; the default fixture is
-// healthy AND moderate on lifestyle (plan A3 seeds skippable defaults), so the
+// healthy AND moderate on lifestyle AND skippable-empty on orthopedics, so the
 // live plan screen shows the "basic" banner, onboarding opens on the moderate
 // defaults and getActiveProfile() stays the single swap point for a future source.
 const ACTIVE_PROFILE: UserProfile = {
@@ -17,6 +17,7 @@ const ACTIVE_PROFILE: UserProfile = {
   diseases: [],
   physicalProblems: [],
   lifestyle: DEFAULT_LIFESTYLE_PROFILE,
+  ...DEFAULT_ORTHOPEDIC_PROFILE,
 };
 
 export function getActiveProfile(): UserProfile {

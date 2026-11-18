@@ -33,6 +33,23 @@ export const DEFAULT_LIFESTYLE_PROFILE = {
   stressLevel: "moderate",
 } as const satisfies LifestyleProfile;
 
+/** Canonical orthopedic limitation ids (wire ids, ordered for the UI). */
+export const ORTHOPEDIC_LIMITATION_IDS = [
+  "knee",
+  "lower-back",
+  "shoulder",
+  "wrist",
+  "custom",
+] as const;
+/** Wire id of one orthopedic limitation; see ORTHOPEDIC_LIMITATION_IDS. */
+export type OrthopedicLimitationId = (typeof ORTHOPEDIC_LIMITATION_IDS)[number];
+
+/** Skippable orthopedic defaults: no protection tags, no caution text. */
+export const DEFAULT_ORTHOPEDIC_PROFILE = {
+  orthopedicLimitations: [],
+  caution: "",
+} as const satisfies Pick<UserProfile, "orthopedicLimitations" | "caution">;
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -42,4 +59,8 @@ export interface UserProfile {
   physicalProblems: readonly string[];
   /** Lifestyle & recovery context; defaults to moderate when the user skips. */
   lifestyle: LifestyleProfile;
+  /** Joints/movements the plan must protect; empty when the user skipped. */
+  orthopedicLimitations: readonly OrthopedicLimitationId[];
+  /** Verbatim free-form caution for the composer; "" when the user skipped. */
+  caution: string;
 }

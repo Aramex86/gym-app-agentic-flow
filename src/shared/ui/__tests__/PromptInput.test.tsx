@@ -50,6 +50,18 @@ describe("shared/ui atoms PromptInput — SSR output", () => {
     expect(html).toContain('rows="1"');
   });
 
+  it("forwards maxLength to the native textarea attribute (case-insensitive)", () => {
+    const html = renderToString(
+      <PromptInput label="L" value="" maxLength={280} onValueChange={() => {}} />,
+    );
+    expect(html).toMatch(/maxlength="280"/i);
+  });
+
+  it("emits no maxlength attribute when maxLength is omitted", () => {
+    const html = render();
+    expect(html).not.toMatch(/maxlength/i);
+  });
+
   it("renders disabled='' when disabled is passed (frozen while a request is pending)", () => {
     const html = renderToString(
       <PromptInput label="L" value="" disabled onValueChange={() => {}} />,

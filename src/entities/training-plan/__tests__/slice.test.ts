@@ -8,6 +8,8 @@ import { SAMPLE_PLAN } from "@shared/config/plan.sample";
 import type { PlanWeek } from "@shared/config/plan.schema";
 import { getActiveProfile } from "@entities/profile";
 import type { LifestyleProfile } from "@entities/profile";
+import { ORTHOPEDIC_LIMITATION_IDS } from "@entities/profile";
+import type { OrthopedicSelection, TrainingGoalId } from "../types";
 import { TRAINING_GOAL_IDS } from "../types";
 import { buildGeneratePlanRequest, filterPlanWeeksByExerciseName } from "../slice";
 
@@ -222,5 +224,83 @@ describe("entities/training-plan buildGeneratePlanRequest", () => {
       dailyActivity: "moderate",
       stressLevel: "moderate",
     });
+  });
+
+  it("no orthopedic override -> request.caution comes from the profile and the profile reference is preserved", () => {
+    const profile = { ...getActiveProfile(), caution: "  keep me  ", orthopedicLimitations: ["knee"] as const };
+    const request = buildGeneratePlanRequest(profile, ["strength"], ["smart-watch"]);
+    expect(request.caution).toBe(profile.caution);
+    expect(request.profile).toBe(profile);
+    expect(request.profile.orthopedicLimitations).toBe(profile.orthopedicLimitations);
+  });
+
+  it("orthopedic override -> limitations are deduped and re-ordered canonically", () => {
+    const profile = getActiveProfile();
+    const selection: OrthopedicSelection = {
+      limitations: ["wrist", "knee", "wrist"],
+      caution: "",
+    };
+
+    const request = buildGeneratePlanRequest(profile, ["strength"], ["smart-watch"], undefined, selection);
+
+    expect(request.profile.orthopedicLimitations).toEqual(["knee", "wrist"]);
+    expect(request.profile.orthopedicLimitations).toEqual(
+      ORTHOPEDIC_LIMITATION_IDS.filter((id) => new Set(["wrist", "knee"]).has(id)),
+    );
+  });
+
+  it("orthopedic override -> new profile object, base never mutated, values carried in the payload", () => {
+    const profile = getActiveProfile();
+    const selection: OrthopedicSelection = {
+      limitations: ["lower-back", "shoulder"],
+      caution: "No overhead press",
+    };
+
+    const request = buildGeneratePlanRequest(profile, ["strength"], ["smart-watch"], undefined, selection);
+
+    expect(request.profile).not.toBe(profile);
+    expect(profile.orthopedicLimitations).toEqual([]);
+    expect(profile.caution).toBe("");
+    expect(request.profile.orthopedicLimitations).toEqual(["lower-back", "shoulder"]);
+    expect(request.profile.caution).toBe("No overhead press");
+    expect(request.caution).toBe("No overhead press");
+  });
+
+  it("orthopedic caution is copied verbatim (no trim, no slice, no normalization)", () => {
+    const profile = getActiveProfile();
+    const raw = "  leading and trailing spaces kept  ";
+    const request = buildGeneratePlanRequest(
+      profile,
+      ["strength"],
+      ["smart-watch"],
+      undefined,
+      { limitations: [], caution: raw },
+    );
+    expect(request.caution).toBe(raw);
+    expect(request.profile.caution).toBe(raw);
+  });
+
+  it("lifestyle + orthopedic overrides together survive in one profile object", () => {
+    const profile = getActiveProfile();
+    const lifestyle: LifestyleProfile = {
+      sleepDuration: "6-7",
+      dailyActivity: "light",
+      stressLevel: "high",
+    };
+
+    const request = buildGeneratePlanRequest(
+      profile,
+      ["mobility", "strength", "mobility"],
+      ["smart-watch"],
+      lifestyle,
+      { limitations: ["wrist", "knee"], caution: "gentle wrist loading" },
+    );
+
+    expect(request.profile).not.toBe(profile);
+    expect(request.profile.lifestyle).toEqual(lifestyle);
+    expect(request.profile.orthopedicLimitations).toEqual(["knee", "wrist"]);
+    expect(request.profile.caution).toBe("gentle wrist loading");
+    expect(request.caution).toBe("gentle wrist loading");
+    expect(request.goals).toEqual(["strength", "mobility"]);
   });
 });

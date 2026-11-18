@@ -6,6 +6,8 @@ import type { UserProfile } from "../types";
 import {
   DAILY_ACTIVITY_IDS,
   DEFAULT_LIFESTYLE_PROFILE,
+  DEFAULT_ORTHOPEDIC_PROFILE,
+  ORTHOPEDIC_LIMITATION_IDS,
   SLEEP_DURATION_IDS,
   STRESS_LEVEL_IDS,
   getActiveProfile,
@@ -19,6 +21,7 @@ function makeProfile(overrides: Partial<UserProfile>): UserProfile {
     diseases: [],
     physicalProblems: [],
     lifestyle: DEFAULT_LIFESTYLE_PROFILE,
+    ...DEFAULT_ORTHOPEDIC_PROFILE,
     ...overrides,
   };
 }
@@ -43,10 +46,30 @@ describe("entities/profile — getActiveProfile", () => {
     });
   });
 
+  it("active profile opens on skippable orthopedic defaults (no tags, no caution)", () => {
+    expect(getActiveProfile().orthopedicLimitations).toEqual([]);
+    expect(getActiveProfile().caution).toBe("");
+  });
+
+  it("canonical orthopedic limitation ids are UI-ordered", () => {
+    expect([...ORTHOPEDIC_LIMITATION_IDS]).toEqual([
+      "knee",
+      "lower-back",
+      "shoulder",
+      "wrist",
+      "custom",
+    ]);
+  });
+
   it("every DEFAULT_LIFESTYLE_PROFILE value is a member of its canonical id tuple", () => {
     expect(SLEEP_DURATION_IDS).toContain(DEFAULT_LIFESTYLE_PROFILE.sleepDuration);
     expect(DAILY_ACTIVITY_IDS).toContain(DEFAULT_LIFESTYLE_PROFILE.dailyActivity);
     expect(STRESS_LEVEL_IDS).toContain(DEFAULT_LIFESTYLE_PROFILE.stressLevel);
+  });
+
+  it("DEFAULT_ORTHOPEDIC_PROFILE is the skippable empty shape", () => {
+    expect(DEFAULT_ORTHOPEDIC_PROFILE.orthopedicLimitations).toEqual([]);
+    expect(DEFAULT_ORTHOPEDIC_PROFILE.caution).toBe("");
   });
 });
 

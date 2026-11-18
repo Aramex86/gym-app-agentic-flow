@@ -6,6 +6,7 @@ export type {
   RecomposePlanRequest,
   GeneratePlanRequest,
   TrainingGoalId,
+  OrthopedicSelection,
 } from "./types";
 export { TRAINING_GOAL_IDS } from "./types";
 export { getTrainingPlan } from "./api";
