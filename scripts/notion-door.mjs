@@ -16,8 +16,17 @@
  * - Token from env NOTION_INTEGRATION_TOKEN only, never in files.
  * - Card Description is authoritative content (GOAL/SCOPE/BEHAVIOR).
  */
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+
+// .env is the single source of truth: load once, system env wins.
+for (const line of (existsSync(join(process.cwd(), '.env'))
+  ? readFileSync(join(process.cwd(), '.env'), 'utf8').split(/\r?\n/)
+: [])) {
+  const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+  if (m && m[1] !== '' && process.env[m[1]] === undefined)
+    process.env[m[1]] = m[2].replace(/^[\"']|[\"']$/g, '').trim();
+}
 
 const DB_ID = '2029eadc-774a-4f0b-9f7d-7bfdd9f84b2e';
 const TOKEN = process.env.NOTION_INTEGRATION_TOKEN || '';
@@ -88,13 +97,15 @@ async function queryDatabase(filter = null) {
   });
 }
 
-async function setInProgress(pageId, current) {
+async function setInProgress(pageId, current, props = {}) {
   if (current.toLowerCase().includes('progress')) {
     console.log('door: card already In Progress');
     return;
   }
+  // Status may be type status OR select depending on the board schema
+  const statusKind = props['Status'] && props['Status'].type === 'status' ? 'status' : 'select';
   await notion(`/pages/${pageId}`, 'PATCH', {
-    properties: { Status: { status: { name: 'In Progress' } } },
+    properties: { Status: { [statusKind]: { name: 'In Progress' } } },
   });
   console.log('door: card -> In Progress');
 }
@@ -167,7 +178,7 @@ async function main() {
   const relPath = writeTaskFile(card);
 
   if (!dry) {
-    try { await setInProgress(card.id, status); } catch (e) { console.error(e.message); }
+    await setInProgress(card.id, status, props);
   } else {
     console.log('door: dry — status untouched');
   }

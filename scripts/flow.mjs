@@ -417,6 +417,21 @@ if (task && /^notion:/.test(task)) {
   task = out.pop();
   console.log("door resolved: " + task);
 }
+if (arg1 === "--next") {
+  // FIFO: the door itself picks the first To Do card (ids are machine-internal)
+  const r = spawnSync("node", ["scripts/notion-door.mjs", "--next"], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  if (r.status !== 0) exit(1, "door failed - see above");
+  const outn = r.stdout
+    .toString()
+    .trim()
+    .split("\n")
+    .map((l) => l.replace(/^door resolved:\s*/, ""))
+    .filter((l) => l.startsWith("tasks/"));
+  task = outn.pop();
+  console.log("door resolved: " + task);
+}
 if (!task || !existsSync(task))
   exit(
     1,
