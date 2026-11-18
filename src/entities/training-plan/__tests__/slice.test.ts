@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { SAMPLE_PLAN } from "@shared/config/plan.sample";
 import type { PlanWeek } from "@shared/config/plan.schema";
 import { getActiveProfile } from "@entities/profile";
+import type { LifestyleProfile } from "@entities/profile";
 import { TRAINING_GOAL_IDS } from "../types";
 import { buildGeneratePlanRequest, filterPlanWeeksByExerciseName } from "../slice";
 
@@ -193,5 +194,33 @@ describe("entities/training-plan buildGeneratePlanRequest", () => {
       ["heart-rate-strap", "smart-watch"],
     );
     expect(request.goals).toEqual([]);
+  });
+
+  it("no lifestyle override -> profile's own lifestyle is sent (reference kept)", () => {
+    const profile = getActiveProfile();
+    const request = buildGeneratePlanRequest(profile, ["strength"], ["smart-watch"]);
+    expect(request.profile.lifestyle).toEqual(profile.lifestyle);
+  });
+
+  it("lifestyle override -> new profile object with the override, base never mutated", () => {
+    const profile = getActiveProfile();
+    const override: LifestyleProfile = {
+      sleepDuration: "under-6",
+      dailyActivity: "high",
+      stressLevel: "low",
+    };
+
+    const request = buildGeneratePlanRequest(profile, ["strength"], ["smart-watch"], override);
+
+    expect(request.profile).not.toBe(profile);
+    expect(request.profile.lifestyle).toEqual(override);
+    // Canonical goal guarantee still holds with the override.
+    expect(request.goals).toEqual(["strength"]);
+    // No mutation of the base profile.
+    expect(profile.lifestyle).toEqual({
+      sleepDuration: "7-8",
+      dailyActivity: "moderate",
+      stressLevel: "moderate",
+    });
   });
 });

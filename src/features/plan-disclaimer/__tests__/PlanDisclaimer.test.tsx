@@ -7,7 +7,9 @@ import { describe, expect, it } from "vitest";
 import type { ReactElement } from "react";
 import { renderToString } from "react-dom/server";
 import type { UserProfile } from "@entities/profile";
-import { getActiveProfile, hasHealthConditions } from "@entities/profile";
+// WHY: plan 9e — UserProfile gained a required lifestyle field; fixtures add
+// only the default (moderate) so disclaimer behavior is unchanged (ADR-0001 D4).
+import { DEFAULT_LIFESTYLE_PROFILE, getActiveProfile, hasHealthConditions } from "@entities/profile";
 import { PlanDisclaimer } from "../ui/PlanDisclaimer";
 
 const BASE_LINE =
@@ -22,7 +24,15 @@ function render(element: ReactElement): string {
 describe("features/plan-disclaimer — variant selection", () => {
   it("healthy profile -> basic: base line present, doctor line absent", () => {
     const html = render(
-      <PlanDisclaimer profile={{ id: "t", name: "T", diseases: [], physicalProblems: [] }} />,
+      <PlanDisclaimer
+        profile={{
+          id: "t",
+          name: "T",
+          diseases: [],
+          physicalProblems: [],
+          lifestyle: DEFAULT_LIFESTYLE_PROFILE,
+        }}
+      />,
     );
     expect(html).toContain(BASE_LINE);
     expect(html).not.toContain(DOCTOR_LINE);
@@ -31,7 +41,7 @@ describe("features/plan-disclaimer — variant selection", () => {
   it("profile with a disease -> disease: doctor line and base line present", () => {
     const html = render(
       <PlanDisclaimer
-        profile={{ id: "t", name: "T", diseases: ["asthma"], physicalProblems: [] }}
+        profile={{ id: "t", name: "T", diseases: ["asthma"], physicalProblems: [], lifestyle: DEFAULT_LIFESTYLE_PROFILE }}
       />,
     );
     expect(html).toContain(DOCTOR_LINE);
@@ -41,7 +51,7 @@ describe("features/plan-disclaimer — variant selection", () => {
   it("profile with a physical problem -> disease path too", () => {
     const html = render(
       <PlanDisclaimer
-        profile={{ id: "t", name: "T", diseases: [], physicalProblems: ["knee injury"] }}
+        profile={{ id: "t", name: "T", diseases: [], physicalProblems: ["knee injury"], lifestyle: DEFAULT_LIFESTYLE_PROFILE }}
       />,
     );
     expect(html).toContain(DOCTOR_LINE);
