@@ -12,10 +12,11 @@ import {
   type TrainingGoalId,
   type TrainingPlan,
 } from "@entities/training-plan";
-import type { UserProfile } from "@entities/profile";
+import type { LifestyleProfile, UserProfile } from "@entities/profile";
 import { HARDWARE_IDS } from "../config/hardware";
 import { GoalSelect } from "./GoalSelect";
 import { HardwareMap } from "./HardwareMap";
+import { LifestyleRecovery } from "./LifestyleRecovery";
 import { PayloadPreview } from "./PayloadPreview";
 
 export interface OnboardingProps {
@@ -49,12 +50,18 @@ const pendingStyle = {
  */
 export function Onboarding(props: OnboardingProps): JSX.Element {
   const [goals, setGoals] = useState<TrainingGoalId[]>([]);
+  // WHY: seeded from the EFFECTIVE profile (override first) so a test/profile
+  // with non-default lifestyle is respected; edits stay session-local.
+  const [lifestyle, setLifestyle] = useState<LifestyleProfile>(() => ({
+    ...(props.profile ?? getActiveProfile()).lifestyle,
+  }));
   const [status, setStatus] = useState<"idle" | "pending" | "error">("idle");
 
   const request = buildGeneratePlanRequest(
     props.profile ?? getActiveProfile(),
     goals,
     HARDWARE_IDS,
+    lifestyle,
   );
   const composerOffline = !isComposerAvailable(useComposerStatus());
   const generateDisabled = goals.length === 0 || status === "pending" || composerOffline;
@@ -66,6 +73,11 @@ export function Onboarding(props: OnboardingProps): JSX.Element {
         ? current.filter((goal) => goal !== id)
         : [...current, id],
     );
+  }
+
+  function handleLifestyleChange(next: LifestyleProfile): void {
+    if (status === "pending") return; // same freeze rule as goal chips
+    setLifestyle(next);
   }
 
   async function handleGenerate(): Promise<void> {
@@ -85,6 +97,7 @@ export function Onboarding(props: OnboardingProps): JSX.Element {
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Onboarding</h2>
       <GoalSelect selected={goals} onToggle={handleToggle} />
+      <LifestyleRecovery value={lifestyle} onChange={handleLifestyleChange} />
       <HardwareMap />
       <PayloadPreview request={request} />
       <Button

@@ -10,7 +10,7 @@ import type {
   TrainingGoalId,
 } from "./types";
 import { TRAINING_GOAL_IDS } from "./types";
-import type { UserProfile } from "@entities/profile";
+import type { LifestyleProfile, UserProfile } from "@entities/profile";
 
 /**
  * Filters plan weeks by exercise name query.
@@ -54,6 +54,8 @@ export function filterPlanWeeksByExerciseName(
  * @param profile Active user profile to send.
  * @param goals Selected goal ids in arbitrary click order.
  * @param hardware Ordered hardware source ids from feature config.
+ * @param lifestyle Optional lifestyle override merged into the profile payload;
+ *   omitting it sends the profile's own `lifestyle` field unchanged.
  * @returns New request object with canonicalized goals and copied arrays.
  * @remarks Do not pass this for re-compose; use RecomposePlanRequest there.
  */
@@ -61,11 +63,14 @@ export function buildGeneratePlanRequest(
   profile: UserProfile,
   goals: readonly TrainingGoalId[],
   hardware: readonly string[],
+  lifestyle?: LifestyleProfile,
 ): GeneratePlanRequest {
   const uniqueGoals = new Set<TrainingGoalId>(goals);
   const canonicalGoals = TRAINING_GOAL_IDS.filter((goal) => uniqueGoals.has(goal));
   return {
-    profile,
+    // WHY: no-override path must keep the identical profile reference so callers
+    // can assert request identity/back-compat; only merge a new object when overridden.
+    profile: lifestyle ? { ...profile, lifestyle } : profile,
     goals: [...canonicalGoals],
     hardware: [...hardware],
   };

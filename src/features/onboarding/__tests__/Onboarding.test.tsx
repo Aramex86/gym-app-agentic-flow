@@ -2,18 +2,31 @@
 /* features/onboarding — DOM interaction tests. */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Onboarding } from "../ui/Onboarding";
 import { buildGeneratePlanRequest, TRAINING_GOAL_IDS } from "@entities/training-plan";
 import type { TrainingPlan } from "@entities/training-plan";
-import { getActiveProfile } from "@entities/profile";
+import {
+  DAILY_ACTIVITY_IDS,
+  DEFAULT_LIFESTYLE_PROFILE,
+  SLEEP_DURATION_IDS,
+  STRESS_LEVEL_IDS,
+  getActiveProfile,
+} from "@entities/profile";
 import { resetComposerStatus, setComposerStatus } from "@shared/config/composerStatus";
 import { resetActivePlan } from "@shared/config/activePlan";
 import { GOAL_OPTIONS } from "../config/goals";
 import { HARDWARE_IDS, HARDWARE_MAP } from "../config/hardware";
+import {
+  DAILY_ACTIVITY_OPTIONS,
+  SLEEP_DURATION_OPTIONS,
+  STRESS_LEVEL_OPTIONS,
+} from "../config/lifestyle";
 import onboardingSource from "../ui/Onboarding.tsx?raw";
 import goalSelectSource from "../ui/GoalSelect.tsx?raw";
 import hardwareMapSource from "../ui/HardwareMap.tsx?raw";
+import lifestyleRecoverySource from "../ui/LifestyleRecovery.tsx?raw";
+import lifestyleConfigSource from "../config/lifestyle.ts?raw";
 import payloadPreviewSource from "../ui/PayloadPreview.tsx?raw";
 
 const ONE_WEEK_PLAN: TrainingPlan = {
@@ -211,9 +224,145 @@ describe("features onboarding B5 + gate + hardware + config", () => {
 
 describe("features onboarding — source guards", () => {
   it("ui sources contain no hardcoded colors, fetch/axios, or react-router", () => {
-    const sources = [onboardingSource, goalSelectSource, hardwareMapSource, payloadPreviewSource];
+    const sources = [
+      onboardingSource,
+      goalSelectSource,
+      hardwareMapSource,
+      lifestyleRecoverySource,
+      lifestyleConfigSource,
+      payloadPreviewSource,
+    ];
     for (const source of sources) {
       expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}|rgb\(|fetch\s*\(|axios|react-router/i);
     }
+  });
+
+  it("onboarding lifestyle sources leak no data off the device (payload is the only egress)", () => {
+    const sources = [onboardingSource, lifestyleRecoverySource, lifestyleConfigSource];
+    for (const source of sources) {
+      expect(source).not.toMatch(/localStorage|sessionStorage|sendBeacon/i);
+    }
+  });
+});
+
+describe("features onboarding — lifestyle & recovery", () => {
+  function group(name: string): HTMLElement {
+    return screen.getByRole("group", { name });
+  }
+
+  it("renders the heading, three named groups and the skippable hint", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+
+    expect(screen.getByRole("heading", { name: "Lifestyle & recovery" })).toBeTruthy();
+    expect(group("Sleep duration")).toBeTruthy();
+    expect(group("Daily activity")).toBeTruthy();
+    expect(group("Stress level")).toBeTruthy();
+    expect(screen.getByText("Skip any field — moderate defaults are already applied.")).toBeTruthy();
+  });
+
+  it("opens on moderate defaults with exactly one pressed chip per group", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+
+    // WHY: "Moderate" exists in two groups — always scope with within(group).
+    expect(
+      within(group("Sleep duration")).getByRole("button", { name: "7-8 h" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      within(group("Daily activity")).getByRole("button", { name: "Moderate" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      within(group("Stress level")).getByRole("button", { name: "Moderate" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    for (const name of ["Sleep duration", "Daily activity", "Stress level"]) {
+      expect(
+        within(group(name)).getAllByRole("button").filter((chip) => chip.getAttribute("aria-pressed") === "true")
+          .length,
+      ).toBe(1);
+    }
+  });
+
+  it("payload preview contains the moderate lifestyle defaults before any click", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+
+    const preview = JSON.parse(previewCodeText()) as { profile: { lifestyle: unknown } };
+    expect(preview.profile.lifestyle).toEqual({
+      sleepDuration: "7-8",
+      dailyActivity: "moderate",
+      stressLevel: "moderate",
+    });
+  });
+
+  it("changing sleep/activity/stress updates the preview wire ids", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "< 6 h" }));
+    fireEvent.click(within(group("Daily activity")).getByRole("button", { name: "High" }));
+    fireEvent.click(within(group("Stress level")).getByRole("button", { name: "Low" }));
+
+    const preview = JSON.parse(previewCodeText()) as {
+      profile: { lifestyle: { sleepDuration: string; dailyActivity: string; stressLevel: string } };
+    };
+    expect(preview.profile.lifestyle).toEqual({
+      sleepDuration: "under-6",
+      dailyActivity: "high",
+      stressLevel: "low",
+    });
+  });
+
+  it("clicking an already-selected chip keeps it pressed and leaves the preview unchanged", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+    const before = previewCodeText();
+
+    const sleepChip = within(group("Sleep duration")).getByRole("button", { name: "7-8 h" });
+    fireEvent.click(sleepChip);
+    expect(sleepChip.getAttribute("aria-pressed")).toBe("true");
+    expect(previewCodeText()).toBe(before);
+  });
+
+  it("generate with only a goal selected POSTs the preview body including default lifestyle", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
+    const onGenerated = vi.fn();
+
+    render(<Onboarding onGenerated={onGenerated} />);
+    fireEvent.click(screen.getByRole("button", { name: "Endurance" }));
+    fireEvent.click(generateButton());
+
+    await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
+
+    const sentBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1].body));
+    const previewBody = JSON.parse(previewCodeText());
+    expect(sentBody).toEqual(previewBody);
+    expect(sentBody.profile.lifestyle).toEqual(DEFAULT_LIFESTYLE_PROFILE);
+  });
+
+  it("lifestyle chip clicks are ignored while a generate is pending", () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReturnValueOnce(new Promise<Response>(() => {}));
+
+    render(<Onboarding onGenerated={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fireEvent.click(generateButton());
+    expect(generateButton().disabled).toBe(true);
+
+    fireEvent.click(within(group("Sleep duration")).getByRole("button", { name: "8+ h" }));
+    fireEvent.click(within(group("Daily activity")).getByRole("button", { name: "High" }));
+
+    expect(
+      within(group("Sleep duration")).getByRole("button", { name: "7-8 h" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      within(group("Sleep duration")).getByRole("button", { name: "8+ h" }).getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(
+      within(group("Daily activity")).getByRole("button", { name: "Moderate" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("keeps lifestyle option ids aligned with the canonical entity tuples", () => {
+    expect(SLEEP_DURATION_OPTIONS.map((option) => option.id)).toEqual([...SLEEP_DURATION_IDS]);
+    expect(DAILY_ACTIVITY_OPTIONS.map((option) => option.id)).toEqual([...DAILY_ACTIVITY_IDS]);
+    expect(STRESS_LEVEL_OPTIONS.map((option) => option.id)).toEqual([...STRESS_LEVEL_IDS]);
   });
 });

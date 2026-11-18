@@ -5,15 +5,18 @@
    it do not change. */
 
 import type { UserProfile } from "./types";
+import { DEFAULT_LIFESTYLE_PROFILE } from "./types";
 
-// WHY: plan A2 — no profile source exists in this worktree yet; the default
-// fixture is healthy so the live plan screen shows the "basic" banner and
-// getActiveProfile() stays the single swap point for a future source.
+// WHY: no profile source exists in this worktree yet; the default fixture is
+// healthy AND moderate on lifestyle (plan A3 seeds skippable defaults), so the
+// live plan screen shows the "basic" banner, onboarding opens on the moderate
+// defaults and getActiveProfile() stays the single swap point for a future source.
 const ACTIVE_PROFILE: UserProfile = {
   id: "profile-active",
   name: "Active user",
   diseases: [],
   physicalProblems: [],
+  lifestyle: DEFAULT_LIFESTYLE_PROFILE,
 };
 
 export function getActiveProfile(): UserProfile {
