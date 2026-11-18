@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Agent Factory — Agentic Flow</title>
+<style>
+  :root{
+    --paper:#F0EEE6; --ink:#191917; --muted:#6E6B63; --line:#D9D5CA;
+    --accent:#C96442; --accent-soft:#E8DCCF; --dark:#141414;
+    --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+    --sans:"Avenir Next","Helvetica Neue",Helvetica,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#0d0d0c;overflow:hidden}
+  .stage{position:fixed;left:50%;top:50%;width:1920px;height:1080px;
+    transform-origin:center center;}
+  .slide{position:absolute;inset:0;background:var(--paper);color:var(--ink);
+    padding:72px 96px;display:none;flex-direction:column}
+  .slide.active{display:flex}
+  .slide.dark{background:var(--dark);color:var(--paper)}
+
+  /* chrome */
+  .chrome{display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--mono);font-size:17px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted)}
+  .dark .chrome{color:#9a968c}
+  .chrome .accent{color:var(--accent)}
+  .pageno{position:absolute;right:96px;bottom:56px;font-family:var(--mono);
+    font-size:17px;color:var(--muted);letter-spacing:.1em}
+  .dark .pageno{color:#9a968c}
+
+  /* type */
+  h1{font-family:var(--serif);font-weight:400;font-size:96px;line-height:1.06;
+    letter-spacing:-.01em;text-wrap:balance}
+  h2{font-family:var(--serif);font-weight:400;font-size:64px;line-height:1.1;
+    letter-spacing:-.01em;max-width:1400px;text-wrap:balance}
+  .lede{font-family:var(--sans);font-size:26px;line-height:1.55;color:var(--muted);
+    max-width:1180px;text-wrap:pretty}
+  .dark .lede{color:#b9b5aa}
+  .accent-i{font-style:italic;color:var(--accent)}
+  .rule{width:64px;height:2px;background:var(--accent);margin:0 0 28px}
+
+  /* flow diagram */
+  .lane{display:flex;align-items:stretch;gap:0;margin-top:64px}
+  .node{border:1.5px solid var(--ink);padding:26px 30px;min-width:250px;
+    background:transparent}
+  .node.dark-node{border-color:var(--paper)}
+  .node .role{font-family:var(--mono);font-size:15px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--accent)}
+  .node .who{font-family:var(--serif);font-size:30px;margin-top:8px}
+  .node .what{font-family:var(--sans);font-size:17px;color:var(--muted);margin-top:6px}
+  .node .model{font-family:var(--mono);font-size:14px;color:var(--muted);margin-top:10px}
+  .gate{display:flex;flex-direction:column;justify-content:center;align-items:center;
+    padding:0 22px;gap:8px}
+  .gate .arrow{font-family:var(--mono);font-size:30px;color:var(--ink)}
+  .gate .label{font-family:var(--mono);font-size:13px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--accent)}
+
+  /* lists */
+  .lawlist{list-style:none;margin-top:48px}
+  .lawlist li{display:grid;grid-template-columns:56px 1fr;gap:24px;
+    padding:22px 0;border-top:1px solid var(--line);align-items:baseline}
+  .lawlist .num{font-family:var(--mono);font-size:18px;color:var(--accent)}
+  .lawlist .body{font-family:var(--sans);font-size:23px;line-height:1.5}
+  .lawlist .body b{font-weight:600}
+  .lawlist .why{font-family:var(--sans);font-size:17px;color:var(--muted);
+    margin-top:6px;display:block}
+  .dark .lawlist li{border-top-color:#3a3936}
+
+  /* refusal cards */
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:36px;margin-top:64px}
+  .card{border:1.5px solid var(--ink);padding:34px 32px}
+  .card .tag{font-family:var(--mono);font-size:14px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--accent)}
+  .card h3{font-family:var(--serif);font-size:28px;font-weight:400;margin:12px 0 10px}
+  .card p{font-family:var(--sans);font-size:17px;line-height:1.5;color:var(--muted)}
+  .card .fix{font-family:var(--mono);font-size:14px;color:var(--ink);margin-top:16px;
+    padding-top:14px;border-top:1px solid var(--line)}
+
+  /* numbers */
+  .stats{display:flex;gap:80px;margin-top:70px}
+  .stat .n{font-family:var(--serif);font-size:88px;line-height:1;color:var(--ink)}
+  .stat .n em{font-style:normal;color:var(--accent)}
+  .stat .c{font-family:var(--sans);font-size:18px;color:var(--muted);margin-top:12px;
+    max-width:260px;line-height:1.4}
+
+  /* code-ish quote */
+  .term{font-family:var(--mono);font-size:19px;line-height:1.7;background:var(--dark);
+    color:#d4d0c5;padding:30px 36px;margin-top:56px;max-width:1180px}
+  .term .p{color:#8a9a7b}
+  .term .a{color:var(--accent)}
+
+  .footer-note{position:absolute;left:96px;bottom:56px;font-family:var(--sans);
+    font-size:16px;color:var(--muted)}
+  .dark .footer-note{color:#9a968c}
+
+  /* deck UI (outside stage) */
+  .hud{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;
+    gap:14px;padding:10px;z-index:10;font-family:var(--mono);font-size:14px;
+    color:#9a968c}
+  .hud button{background:none;border:1px solid #3a3936;color:#9a968c;
+    font-family:var(--mono);font-size:13px;padding:6px 14px;cursor:pointer;min-height:32px}
+  .hud button:hover{border-color:var(--accent);color:var(--paper)}
+  .progress{position:fixed;top:0;left:0;height:3px;background:var(--accent);
+    width:0;z-index:10;transition:width .25s ease}
+  @media print{
+    html,body{overflow:visible;background:#fff}
+    .stage{position:static;transform:none!important;width:auto;height:auto}
+    .slide{display:flex!important;position:relative;width:1920px;height:1080px;
+      page-break-after:always;margin:0}
+    .hud,.progress{display:none}
+    @page{size:1920px 1080px;margin:0}
+  }
+  @media (prefers-reduced-motion:reduce){.progress{transition:none}}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="stage" id="stage">
+
+  <!-- 01 TITLE -->
+  <section class="slide dark" id="s1" aria-label="Title">
+    <div class="chrome"><span>The Agent Factory</span><span class="accent">01 / 11</span></div>
+    <div style="margin:auto 0;">
+      <h1 style="font-size:120px;max-width:1500px;">A multi-agent coding <span class="accent-i">factory</span>, built on a real product.</h1>
+      <p class="lede" style="margin-top:36px;">Four specialist agents plan, build, test and commit through human checkpoints — with an exam after every hop and a truth record of every token spent.</p>
+    </div>
+    <div class="footer-note">gym-app · Claude Code CLI · Ollama Cloud · November 2026</div>
+    <div class="pageno">01 / 11</div>
+  </section>
+
+  <!-- 02 WHY -->
+  <section class="slide" id="s2" aria-label="Why a factory">
+    <div class="chrome"><span>Why not one agent in a loop</span><span>02 / 11</span></div>
+    <div style="margin-top:56px;">
+      <div class="rule"></div>
+      <h2>One model in a loop drifts. A factory has <span class="accent-i">laws, gates and an exam.</span></h2>
+    </div>
+    <ul class="lawlist">
+      <li><span class="num">01</span><span class="body"><b>Hallucinated success.</b> An agent without gates declares PASS, ships broken work, burns the budget silently.<span class="why">Observed live: developer artifacts uncommitted while the report claimed completion.</span></span></li>
+      <li><span class="num">02</span><span class="body"><b>Context soup.</b> Plan, build and test in one context window means later steps argue with earlier assumptions.<span class="why">Factory answer: every hop starts with a clean context in its own sandbox.</span></span></li>
+      <li><span class="num">03</span><span class="body"><b>Invisible cost.</b> No telemetry means no price tag on a mistake.<span class="why">Factory answer: every hop is traced — turns, tokens, dollars.</span></span></li>
+    </ul>
+    <div class="pageno">02 / 11</div>
+  </section>
+
+  <!-- 03 ASSEMBLY LINE -->
+  <section class="slide" id="s3" aria-label="The assembly line">
+    <div class="chrome"><span>The assembly line</span><span>03 / 11</span></div>
+    <div style="margin-top:40px;">
+      <div class="rule"></div>
+      <h2>One task file in. One reviewed commit out.</h2>
+      <p class="lede" style="margin-top:20px;">A Markdown task card is the whole input. Each agent owns exactly one kind of work; between them, a human owns every irreversible step.</p>
+    </div>
+    <div class="lane">
+      <div class="node"><div class="role">Input</div><div class="who">Task card</div><div class="what">Notion → tasks/X.md</div></div>
+      <div class="gate"><span class="arrow">→</span><span class="label">plan · Y/N</span></div>
+      <div class="node"><div class="role">Planner</div><div class="who">Plan</div><div class="what">steps + preconditions</div><div class="model">deepseek-v4.1-flash</div></div>
+      <div class="gate"><span class="arrow">→</span><span class="label">build · Y/N</span></div>
+      <div class="node"><div class="role">Developer</div><div class="who">Code + tests</div><div class="what">sandbox worktree</div><div class="model">glm-5.3-flash</div></div>
+      <div class="gate"><span class="arrow">→</span><span class="label">verdict</span></div>
+      <div class="node"><div class="role">Tester</div><div class="who">Report</div><div class="what">FAIL = full stop</div><div class="model">glm-5.3-flash</div></div>
+      <div class="gate"><span class="arrow">→</span><span class="label">commit · Y/N</span></div>
+      <div class="node"><div class="role">Committer</div><div class="who">Commit</div><div class="what">after human Y</div></div>
+    </div>
+    <p class="lede" style="margin-top:48px;">The human touches three checkpoints — plan, build, commit — and performs the one push. Agents never do.</p>
+    <div class="pageno">03 / 11</div>
+  </section>
+
+  <!-- 04 CONTRACT LAW -->
+  <section class="slide" id="s4" aria-label="Contract law">
+    <div class="chrome"><span>Contract law</span><span>04 / 11</span></div>
+    <div style="margin-top:56px;">
+      <div class="rule"></div>
+      <h2>Agents operate under <span class="accent-i">constitutional</span> law, not prompts.</h2>
+    </div>
+    <ul class="lawlist">
+      <li><span class="num">§1</span><span class="body"><b>NEVER</b> git push · merge · commit · reset — by any agent, in any sandbox.<span class="why">Enforced by tool denial. Observed live: the developer asked for git and was refused, then handed the human a ready command.</span></span></li>
+      <li><span class="num">§2</span><span class="body"><b>FAIL is a stop</b>, not an invitation to improvise. A failing gate halts the whole circle.<span class="why">The tester judged honestly and stopped the storybook circle; a human recipe fixed it in minutes.</span></span></li>
+      <li><span class="num">§3</span><span class="body"><b>Plans may not contain developer commit steps</b> — commits belong to the tool after the human gate.<span class="why">Added after a plan shipped a self-committing developer (item 14, contract conflict).</span></span></li>
+      <li><span class="num">§4</span><span class="body"><b>Secrets live in env only</b> — task files and prompts travel to the cloud as plain text.<span class="why">GitHub push protection once blocked a leaked key; the placeholder law was born the same evening.</span></span></li>
+    </ul>
+    <div class="pageno">04 / 11</div>
+  </section>
+
+  <!-- 05 THE EXAM -->
+  <section class="slide" id="s5" aria-label="The exam">
+    <div class="chrome"><span>The exam</span><span>05 / 11</span></div>
+    <div style="margin-top:56px;">
+      <div class="rule"></div>
+      <h2>Every hop gets graded by a machine before a human sees it.</h2>
+    </div>
+    <p class="lede" style="margin-top:16px;">Machine gates run first — artifacts, verdicts, contract checks. Human gates only open what machines approve. The human designs the exam; the loop takes it.</p>
+    <div class="term">
+<span class="p">$</span> machine gate: expected artifact <span class="a">docs/plans/…-report.md</span> … <span class="a">OK</span><br>
+<span class="p">$</span> verdict scan … report starts with … <span class="a">PASS</span><br>
+<span class="p">$</span> contract scan … plan contains dev-commit steps … <span class="a">NONE</span><br>
+<span class="p">$</span> eval — exam suite across hops … <span class="a">scored</span><br>
+<span class="p">$</span> GATE committer: waiting for human … <span class="a">Y</span>
+    </div>
+    <div class="pageno">05 / 11</div>
+  </section>
+
+  <!-- 06 MCP -->
+  <section class="slide" id="s6" aria-label="MCP senses">
+    <div class="chrome"><span>MCP is the senses</span><span>06 / 11</span></div>
+    <div style="margin-top:56px;">
+      <div class="rule"></div>
+      <h2>Read-only eyes on design and tasks. Mouths for status belong to <span class="accent-i">doors and humans.</span></h2>
+    </div>
+    <ul class="lawlist">
+      <li><span class="num">01</span><span class="body"><b>Stitch</b> — six read tools granted: list projects, design systems, screens; fetch assets. Write tools never issued.<span class="why">Proven live twice: design system "Kinetic Obsidian" matched tokens 1:1, including the exact accent #FFB800.</span></span></li>
+      <li><span class="num">02</span><span class="body"><b>Notion board</b> — tasks arrive through a door, not agent writes: FIFO or by id, descriptions read and filled by script.<span class="why">Board status is moved by the door and the human. The agents get the file, not the keys.</span></span></li>
+      <li><span class="num">03</span><span class="body"><b>Untracked things vanish in worktrees</b> — so the engine copies .mcp.json into every sandbox.<span class="why">Found the hard way: a whole hop ran silently without MCP from a fresh sandbox.</span></span></li>
+    </ul>
+    <div class="pageno">06 / 11</div>
+  </section>
+
+  <!-- 07 TRUTH SPINE -->
+  <section class="slide" id="s7" aria-label="Truth spine">
+    <div class="chrome"><span>The truth spine</span><span>07 / 11</span></div>
+    <div style="margin-top:56px;">
+      <div class="rule"></div>
+      <h2>Nothing ships into a <span class="accent-i">memory hole.</span> Every hop leaves a record.</h2>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n">v3</div><div class="c">Trace: events, hop tails, digests — the spine every report reads</div></div>
+      <div class="stat"><div class="n">$<em>1.14</em>–<em>1.83</em></div><div class="c">Planner per hop (deepseek, cache-heavy)</div></div>
+      <div class="stat"><div class="n">$<em>0.70</em>–<em>1.01</em></div><div class="c">Developer per hop (glm)</div></div>
+      <div class="stat"><div class="n"><em>130</em></div><div class="c">Kill-switch exit code — one file stops a burning fix loop</div></div>
+    </div>
+    <p class="lede" style="margin-top:56px;">Cost and tokens are rendered into an HTML report after every circle — the same numbers you saw in the console, archived.</p>
+    <div class="pageno">07 / 11</div>
+  </section>
+
+  <!-- 08 HONEST FAILURE -->
+  <section class="slide" id="s8" aria-label="Honest failure">
+    <div class="chrome"><span>Honest failure by design</span><span>08 / 11</span></div>
+    <div style="margin-top:40px;">
+      <div class="rule"></div>
+      <h2>Three refusals in one day. All three were <span class="accent-i">architecture working.</span></h2>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <div class="tag">Refusal 1</div>
+        <h3>Missing precondition</h3>
+        <p>Plan §0 said: verify the storybook toolchain first; STOP if absent. It was absent. The tester stopped the circle instead of faking results.</p>
+        <div class="fix">→ Human recipe, toolchain restored, circle re-run</div>
+      </div>
+      <div class="card">
+        <div class="tag">Refusal 2</div>
+        <h3>Write denied</h3>
+        <p>A law restoration had silently dropped Write from the tester's tools. The agent could not fake an artifact — it reported the loss.</p>
+        <div class="fix">→ Tool contract fixed, report recovered from denials</div>
+      </div>
+      <div class="card">
+        <div class="tag">Refusal 3</div>
+        <h3>Git denied</h3>
+        <p>The developer finished nine files, tried to commit, was refused by the global law — and handed the human the exact commands instead.</p>
+        <div class="fix">→ Human committed after Y. Tests stayed green</div>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:44px;">The lesson is priced: an honest stop costs cents. A hidden burn costs dollars and trust.</p>
+    <div class="pageno">08 / 11</div>
+  </section>
+
+  <!-- 09 SHIPPED -->
+  <section class="slide" id="s9" aria-label="Shipped">
+    <div class="chrome"><span>Built and shipped</span><span>09 / 11</span></div>
+    <div style="margin-top:56px;">
+      <div class="rule"></div>
+      <h2>Three PASS circles. Every commit reached <span class="accent-i">develop</span> through a PR.</h2>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n">107<em>→</em>143</div><div class="c">Tests, across 20 files — every product commit carries its tests</div></div>
+      <div class="stat"><div class="n"><em>3</em>×</div><div class="c">MCP proven in live hops: design tokens matched 1:1</div></div>
+      <div class="stat"><div class="n">v<em>10.6.7</em></div><div class="c">Storybook vitrine with 5 stories, built inside a sandbox circle</div></div>
+      <div class="stat"><div class="n"><em>$0.18</em></div><div class="c">Cost of the honest storybook stop — vs dollars of hidden burn</div></div>
+    </div>
+    <p class="lede" style="margin-top:56px;">Shipped: re-plan prompt box · storybook atoms layer · medical disclaimer, verified against its template and accent color.</p>
+    <div class="pageno">09 / 11</div>
+  </section>
+
+  <!-- 10 PHASE 4 -->
+  <section class="slide" id="s10" aria-label="Phase 4">
+    <div class="chrome"><span>Phase 4</span><span>10 / 11</span></div>
+    <div style="margin-top:56px;">
+      <div class="rule"></div>
+      <h2>The exam becomes the <span class="accent-i">job</span>.</h2>
+    </div>
+    <ul class="lawlist">
+      <li><span class="num">01</span><span class="body"><b>Self-tests for the harness itself.</b> The engine that copies configs, holds contracts and gates verdicts — must pass its own exam before a circle spends a dollar.<span class="why">Three of that day's engine bugs would have been caught by it in under a minute.</span></span></li>
+      <li><span class="num">02</span><span class="body"><b>A doctor agent.</b> Diagnoses branches, sandboxes and environment — and produces a report only. Repair stays human.<span class="why">Report-only law: the doctor never mutates state.</span></span></li>
+      <li><span class="num">03</span><span class="body"><b>One review surface.</b> Plan, diff, tests and commit previewed together — three stops collapse into one.<span class="why">Batch circles share one review queue; goals are engineered for reviewability.</span></span></li>
+    </ul>
+    <div class="pageno">10 / 11</div>
+  </section>
+
+  <!-- 11 CLOSE -->
+  <section class="slide dark" id="s11" aria-label="Closing">
+    <div class="chrome"><span class="accent">Closing</span><span>11 / 11</span></div>
+    <div style="margin:auto 0;">
+      <h1 style="max-width:1500px;">Humans set goals and press Y.<br>The <span class="accent-i">factory</span> ships the rest.</h1>
+      <p class="lede" style="margin-top:40px;">The machine owns assembly, testing and truth-keeping. The human owns direction, judgment and irreversibility — and the exam design that makes both sides honest.</p>
+      <div class="term" style="max-width:900px;">
+<span class="p"># the standing loop, one line</span><br>
+task → plan·Y → build·Y → test → commit·Y → push
+      </div>
+    </div>
+    <div class="footer-note">The Agent Factory · gym-app · built 2026-11-14/15</div>
+    <div class="pageno">11 / 11</div>
+  </section>
+
+</div>
+
+<div class="hud">
+  <button id="prev" aria-label="Previous slide">←</button>
+  <span id="counter">01 / 11</span>
+  <button id="next" aria-label="Next slide">→</button>
+</div>
+
+<script>
+(function(){
+  var slides=[].slice.call(document.querySelectorAll('.slide'));
+  var total=slides.length, idx=0;
+  var saved=parseInt(localStorage.getItem('agentfactory-deck-slide')||'1',10);
+  if(saved>=1&&saved<=total) idx=saved-1;
+
+  function pad(n){return (n<10?'0':'')+n;}
+  function show(i){
+    idx=Math.max(0,Math.min(total-1,i));
+    slides.forEach(function(s,k){s.classList.toggle('active',k===idx);});
+    var t=pad(idx+1)+' / '+pad(total);
+    document.getElementById('counter').textContent=t;
+    document.getElementById('progress').style.width=((idx+1)/total*100)+'%';
+    localStorage.setItem('agentfactory-deck-slide',idx+1);
+  }
+  function fit(){
+    var s=Math.min(window.innerWidth/1920,window.innerHeight/1080);
+    var st=document.getElementById('stage');
+    st.style.transform='translate(-50%,-50%) scale('+s+')';
+  }
+  document.getElementById('next').addEventListener('click',function(){show(idx+1);});
+  document.getElementById('prev').addEventListener('click',function(){show(idx-1);});
+  document.addEventListener('keydown',function(e){
+    if(['ArrowRight','PageDown',' '].indexOf(e.key)>=0){e.preventDefault();show(idx+1);}
+    if(['ArrowLeft','PageUp'].indexOf(e.key)>=0){e.preventDefault();show(idx-1);}
+    if(e.key==='Home'){show(0);} if(e.key==='End'){show(total-1);}
+  });
+  window.addEventListener('resize',fit);
+  fit(); show(idx);
+})();
+</script>
+</body>
+</html>

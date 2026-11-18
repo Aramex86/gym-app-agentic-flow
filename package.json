@@ -11,7 +11,15 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "flow": "node scripts/flow.mjs",
+    "flow:fix": "node scripts/flow.mjs --fix",
+    "eval": "node scripts/eval.mjs",
+    "trace": "node scripts/trace.mjs",
+    "agent": "node scripts/run-agent.mjs",
+    "report": "node scripts/report.mjs",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",
@@ -23,6 +31,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/vite": "^4.3.5",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@typescript-eslint/eslint-plugin": "^8.71.2",
@@ -32,10 +41,22 @@
     "eslint-import-resolver-typescript": "^4",
     "eslint-plugin-fsaa": "0.1.1",
     "eslint-plugin-import": "^2",
+    "jsdom": "^31.0.0",
     "tailwindcss": "^4.3.5",
     "typescript": "~5",
     "vite": "^7",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "storybook": "^10.6.7",
+    "@storybook/react-vite": "^10.6.7",
+    "@chromatic-com/storybook": "latest",
+    "@storybook/addon-vitest": "^10.6.7",
+    "@storybook/addon-a11y": "^10.6.7",
+    "@storybook/addon-docs": "^10.6.7",
+    "@storybook/addon-mcp": "^10.6.7",
+    "eslint-plugin-storybook": "^10.6.7",
+    "@vitest/browser": "3.2.7",
+    "@vitest/coverage-v8": "3.2.7",
+    "playwright": "latest"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

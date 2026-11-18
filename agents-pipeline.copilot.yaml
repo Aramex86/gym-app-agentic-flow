@@ -1,0 +1,8 @@
+# Rail #2 model table (Copilot) — same flat format as agents-pipeline.yaml.
+# Read when PIPELINE_CLI=copilot; the contract `model:` lines in agents/*.md
+# belong to rail #1 (Ollama) and are ignored on this rail.
+roles:
+  planner: claude-opus-5.5
+  developer: gpt-5.3-codex
+  tester: claude-sonnet-5.5
+  committer: claude-haiku-5.5

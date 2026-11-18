@@ -26,6 +26,18 @@
   --accent-amber-dim: #ffba20;
   --accent-glow-volt: 0px 0px 16px rgba(212, 255, 0, 0.15);
   --accent-glow-amber: 0px 0px 16px rgba(255, 184, 0, 0.15);
+  --accent-glow-teal: 0px 0px 8px rgba(0, 229, 163, 0.8); /* AI Composer dot glow (tight, small radius) */
+
+  /* Glass bars — fixed header + bottom nav (stitch-appshell-ref §5.6: alpha
+     treatment must be tokenized, never rgba in TSX) */
+  --surface-glass: rgba(
+    13,
+    17,
+    23,
+    0.85
+  ); /* canvas @ 85% over blurred content */
+  --shadow-glass-top: 0px 1px 8px rgba(0, 0, 0, 0.4); /* ambient header shadow */
+  --shadow-glass-bottom: 0px -2px 16px rgba(0, 0, 0, 0.6); /* upward nav shadow, no hairline */
 
   /* Typography */
   --font-heading: "Space Grotesk", system-ui, sans-serif;
@@ -53,4 +65,7 @@
   --metric-md-size: 18px;
   --metric-md-weight: 500;
   --label-caps: 600 11px/14px var(--font-metric);
+
+  /* Shell chrome metrics (stitch-appshell-ref §4: h-16 bars need a value) */
+  --shell-bar-h: 64px;
 }

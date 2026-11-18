@@ -1,0 +1,27 @@
+/* shared/ui/atoms — barrel. Atoms stay dumb and token-only (ADR-0001 D5). */
+
+export { Button } from "./Button";
+export { NavTab } from "./NavTab";
+export type { NavTabProps } from "./NavTab";
+export { StatusIndicator } from "./StatusIndicator";
+export type { StatusIndicatorProps, StatusTone } from "./StatusIndicator";
+export { EmptyState } from "./EmptyState";
+export type { EmptyStateProps } from "./EmptyState";
+export type { ButtonProps } from "./Button";
+export { DisclaimerBanner } from "./DisclaimerBanner";
+export type { DisclaimerBannerProps, DisclaimerVariant } from "./DisclaimerBanner";
+export { SearchInput } from "./SearchInput";
+export type { SearchInputProps } from "./SearchInput";
+export { PromptInput } from "./PromptInput";
+export type { PromptInputProps } from "./PromptInput";
+export { StatCard } from "./StatCard";
+export type { StatCardProps, StatCardTone } from "./StatCard";
+export { TableCell, TableHeaderCell } from "./TableCell";
+export { ToggleChip } from "./ToggleChip";
+export type { ToggleChipProps } from "./ToggleChip";
+export { CodeBlock } from "./CodeBlock";
+export type { CodeBlockProps } from "./CodeBlock";
+export { InfoCard } from "./InfoCard";
+export type { InfoCardProps } from "./InfoCard";
+export { AlertBanner } from "./AlertBanner";
+export type { AlertBannerProps } from "./AlertBanner";
