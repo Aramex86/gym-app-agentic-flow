@@ -182,6 +182,19 @@ const checks = {
   "file-paths": () => CONTRACT_FILES.every(existsSync),
   /** Enforced by GitHub branch protection, not locally — always passes. */
   "pr-flow": () => true,
+  /** ADR + glossary adoption (ST-21 / ADR-0001): the machine laws have ONE
+   *  home - docs/adr/ (template + README index) and docs/context/glossary.md.
+   *  Mechanical truth: both exist, the template exists, the index lists 0001. */
+  "adr-glossary": () => {
+    const miss = [
+      !existsSync("docs/adr/README.md") && "docs/adr/README.md",
+      !existsSync("docs/adr/0000-template.md") && "docs/adr/0000-template.md",
+      !existsSync("docs/context/glossary.md") && "docs/context/glossary.md",
+    ].filter(Boolean);
+    if (miss.length) return ["missing: " + miss.join(", ")];
+    const idx = readFileSync("docs/adr/README.md", "utf8");
+    return /0001/.test(idx) ? true : ["docs/adr/README.md does not index ADR-0001"];
+  },
   /** Supply-chain policy: lifecycle scripts of dependencies must be blocked
    *  by default (pnpm 10+, allowlist-only builds). */
   "script-policy": () => {
