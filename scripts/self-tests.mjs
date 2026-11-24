@@ -681,6 +681,22 @@ await exhibit('ST-23', 'budget: cap unset=unlimited, ledger sums months, guard s
   delete process.env.PIPELINE_TRACE_BASE;
 });
 
+// ST-25 TARGETED-TEST LAW (master, 24.11): verdict re-run tests the changed
+// files, not the world. Pure exhibits: mapping + honest fallback.
+await exhibit('ST-25', 'targeted tests: changed src -> test paths, structural/fallback honest', async () => {
+  const ct = await import(pathToFileURL(join(KIT, 'scripts', 'changed-tests.mjs')).href);
+  const r1 = ct.mapToTests(['src/a/b.tsx', 'docs/x.md']);
+  assert(r1.tests.includes('src/a/b.test.tsx'), 'vitest convention mapped');
+  assert(r1.tests.includes('src/a/__tests__/b.test.tsx'), '__tests__ sibling mapped');
+  const r2 = ct.mapToTests(['tests/test_b.py'].concat(['src/b.py']));
+  assert(r2.tests.includes('tests/test_b.py'), 'changed pytest file included directly');
+  const g1 = ct.targetedGate({ 'test-targeted': 'npx vitest run $FILES' }, r1.tests, false);
+  assert(g1 && g1.includes('"src/a/b.test.tsx"') && g1.startsWith('npx vitest run'), 'targeted cmd built with $FILES');
+  assert(ct.targetedGate({ test: 'pnpm test' }, r1.tests, false) === null, 'no template -> honest full-gate fallback');
+  assert(ct.targetedGate({ 'test-targeted': 'npx vitest run $FILES' }, [], false) === null, 'no changes -> no targeted cmd');
+  assert(ct.mapToTests(['pnpm-lock.yaml']).structural === true, 'lockfile = structural (full gate wins)');
+});
+
 // ------------------------------------------------------------------
 // report: honest board style
 // ------------------------------------------------------------------

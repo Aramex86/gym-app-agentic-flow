@@ -33,6 +33,8 @@ its PASSPORT. You are READ-ONLY except ONE artifact.
    lint: <from detector or unknown>
    typecheck: <from detector or unknown>
    test: <from detector or unknown>
+   test-targeted: <the targeted-test template, when you can build one from
+                   REAL evidence — see below; otherwise unknown>
    build: <from detector or unknown>
    lockfile: <the lockfile filename you actually saw, or unknown>
    commit_rules: <husky | conventional | plain — ONLY if you read real
@@ -48,6 +50,14 @@ its PASSPORT. You are READ-ONLY except ONE artifact.
    ## Unknown (human fills)
    - <each unknown item>
    ```
+
+   TARGETED-TEST template (master law, 24.11): if `test:` resolves to a
+   runner you SAW (`pnpm npm uv poetry …`), derive `test-targeted:` from it
+   by replacing the runner's plain invocation with its file-scoped one:
+   - pnpm/npm + vitest/jest  → `pnpm vitest run $FILES` / `npx jest $FILES`
+   - uv/poetry + pytest      → `uv run pytest $FILES` / `pytest $FILES`
+   If you cannot trace the test runner, write `unknown` — NEVER invent.
+   The engine runs $FILES = tests of the files the circle changed.
 
 ## LAWS (violation = invalid hop)
 

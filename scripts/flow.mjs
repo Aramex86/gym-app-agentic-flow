@@ -1,8 +1,8 @@
 // scripts/flow.mjs - the pipeline Flow: full circle + fix loop + committer step.
 // SANDBOX MODE (default): every circle runs in its own git worktree copy of
 // the repo -> hops never touch your main working tree; results land on a
-// dedicated feat/<name> branch in the work/ dir. Cleanup: after merge,
-//   git worktree remove work/<name>
+// dedicated feat/<name> branch in the work/ dir. Cleanup after merge:
+//   node scripts/flow.mjs --cleanup <name>   (one command; Windows-proof)
 // Opt-out: pnpm flow tasks\<x>.md --no-wt (run everything in main checkout).
 // Usage:
 //   pnpm flow tasks\<date>-<name>.md     planner->[Y]->developer->[Y]->tester->[committer Y]
@@ -26,7 +26,8 @@ import * as trace from "./trace.mjs";
 import { getProfile } from "./profile.mjs";
 import { loadEnv } from "./env.mjs";
 import { guard as budgetGuard } from "./budget.mjs";
-import { stdin as input, stdout as output } from "node:process";
+import { copyFileSync as _copy } from "node:fs"; // (also used dynamically elsewhere)
+import * as changedTests from "./changed-tests.mjs";
 
 loadEnv(); // repo .env (PIPELINE_CLI, OLLAMA_*, PIPELINE_BUDGET_USD) - system env wins
 
@@ -230,12 +231,12 @@ async function committerStep(_name, report, cwd, rid) {
   console.log(
     "  4) " +
       (cwd !== process.cwd()
-        ? "git worktree remove " + wtRef + " --force; git branch -d feat/<name>"
+        ? "node scripts/flow.mjs --cleanup <name>   (one command; Windows-proof)"
         : "(no worktree in this run)"),
   );
   console.log("=".repeat(60));
 
-  console.log(`After merge, cleanup: git worktree remove ${cwd}`);
+  console.log(`After merge, cleanup: node scripts/flow.mjs --cleanup ${pathBasename(cwd)}`);
 }
 
 // ---------- FIX LOOP ----------
@@ -445,6 +446,32 @@ function latestSandbox() {
 const _bg = budgetGuard();
 if (_bg)
   exit(1, "\n" + _bg + "\n(budget sheet: node scripts/budget.mjs)");
+if (arg1 === "--cleanup" || arg1 === "-cleanup") {
+  // ONE command to end a finished circle (Windows-proof; human runs it
+  // AFTER the PR is merged). Replaces the 4-step manual dance.
+  const name = argv[argv.indexOf("--cleanup") + 1];
+  const workDir = join(process.cwd(), "work");
+  const picked = name || (() => {
+    if (!existsSync(workDir)) return null;
+    const list = readdirSync(workDir).filter((d) => !d.startsWith("."));
+    return list.length === 1 ? list[0] : null;
+  })();
+  if (!picked)
+    exit(3, "--cleanup needs a sandbox name (or exactly ONE sandbox left in work/).\nusage: node scripts/flow.mjs --cleanup 2026-11-24-map-refresh");
+  const wt = join(workDir, picked);
+  if (existsSync(wt)) rmSync(wt, { recursive: true, force: true }); // kills node_modules/dist leftovers too
+  spawnSync("git", ["worktree", "prune"], { stdio: "ignore", cwd: process.cwd() });
+  const br = "feat/" + picked;
+  const del = spawnSync("git", ["branch", "-d", br], { stdio: "pipe", cwd: process.cwd() });
+  console.log(`removed work/${picked} (dir + worktree state)`);
+  if (del.status === 0)
+    console.log(`branch ${br} deleted (-d only works if already merged — safe).`);
+  else {
+    const hint = (del.stderr ? del.stderr.toString() : "").trim().split("\n")[0];
+    console.log(`branch ${br} left in place: ${hint || "not deleted"}.\nAfter the PR is merged: git pull origin develop && git branch -d ${br}`);
+  }
+  exit(0);
+}
 if (arg1 === "--fix" || arg1 === "-fix") {
   const wt = latestSandbox();
   const wd = wt ?? process.cwd();
@@ -462,7 +489,7 @@ console.log(
   "SANDBOX MODE: hops run in their own git worktree copy; your main tree stays clean.",
 );
 console.log(
-  "Cleanup after merge: git worktree remove work/<name>. Opt-out: --no-wt.",
+  "Cleanup after merge: node scripts/flow.mjs --cleanup <name>. Opt-out: --no-wt.",
 );
 let task = arg1,
   opts = {};
@@ -620,6 +647,36 @@ const verifyVerdict = (wt, rid) => {
   const gates = ["lint", "typecheck", "test", "build"].filter(
     (g) => P[g] && P[g] !== "unknown" && String(P[g]).length < 400,
   );
+  // TARGETED-TEST LAW (master 24.11): the verdict re-run tests ONLY the
+  // files this circle changed (coverage suites get slower with every PR).
+  // Full `test` stays as the nightly/statistics run, not a circle gate.
+  let targetedNote = "";
+  try {
+    const { parseDiff, mapToTests, targetedGate } = changedTests;
+    const base = (() => {
+      for (const b of ["develop", "main"]) {
+        const m = spawnSync("git", ["rev-parse", "--verify", b], { cwd: wt, stdio: "pipe" });
+        if (m.status === 0) return b;
+      }
+      return "HEAD~1";
+    })();
+    const mb = spawnSync("git", ["merge-base", "HEAD", base], { cwd: wt, stdio: "pipe" });
+    if (mb.status === 0) {
+      const df = spawnSync("git", ["diff", "--name-only", mb.stdout.toString().trim(), "HEAD"], { cwd: wt, stdio: "pipe" });
+      if (df.status === 0) {
+        const { tests, structural } = mapToTests(parseDiff(df.stdout.toString()));
+        const cmd = targetedGate(P, tests, structural);
+        if (cmd) {
+          P.test = cmd; // swap the full suite for the targeted run
+          targetedNote = `${tests.length} targeted test file(s)`;
+        } else if (!structural && tests.length === 0) {
+          targetedNote = "no code files changed";
+        }
+      }
+    }
+  } catch (e) {
+    targetedNote = "targeted law skipped: " + (e && e.message || e);
+  }
   const vTimeout = Math.max(
     30,
     parseInt(process.env.PIPELINE_VERIFY_TIMEOUT || "600", 10) || 600,
