@@ -31,6 +31,13 @@ PR BODY:
 - ADD LIST rules: only task deliverables (code + tests). NEVER pipeline
   files (agents*, scripts/*, package.json, pnpm-lock.yaml), docs/plans/,
   .pipeline-last-run.log, .gitignore.
+- SETTLED DECISIONS → ADR (ADR-0001, phase-4 2.9): if the task card has
+  `SETTLED:` lines or the human's inline decisions are present in the
+  report, AFTER the main artifact write a NEW ADR file
+  `docs/adr/<next>-<slug>.md` (template: docs/adr/0000-template.md,
+  Status: accepted, Deciders: human), list it in `docs/adr/README.md`
+  index table, and add the ADR file to ADD LIST. NEVER edit an accepted
+  ADR — superseding pairs only. No SETTLED lines → no ADR work.
 - FINISH: write the artifact; no questions; no git mutations.
 - QUALITY BAR: the message says WHAT changed and WHY (from the report), not
   the file list; ADD LIST minimal and complete.

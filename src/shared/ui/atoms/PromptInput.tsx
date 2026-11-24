@@ -21,6 +21,8 @@ export interface PromptInputProps {
   disabled?: boolean;
   /** Visible text rows; default 3. */
   rows?: number;
+  /** Native max length in characters; the owner still caps on change. */
+  maxLength?: number;
 }
 
 const wrapperStyle = {
@@ -51,6 +53,7 @@ export function PromptInput({
   placeholder,
   disabled,
   rows = 3,
+  maxLength,
 }: PromptInputProps): JSX.Element {
   const id = useId();
 
@@ -67,6 +70,7 @@ export function PromptInput({
         value={value}
         placeholder={placeholder}
         disabled={disabled}
+        maxLength={maxLength}
         onChange={(event) => onValueChange(event.target.value)}
       />
     </div>

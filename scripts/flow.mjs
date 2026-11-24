@@ -15,13 +15,20 @@ import {
   readdirSync,
   appendFileSync,
   writeFileSync,
+  copyFileSync,
+  mkdirSync,
   rmSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, resolve, isAbsolute, basename as pathBasename } from "node:path";
 import readline from "node:readline/promises";
 import * as trace from "./trace.mjs";
+import { getProfile } from "./profile.mjs";
+import { loadEnv } from "./env.mjs";
+import { guard as budgetGuard } from "./budget.mjs";
 import { stdin as input, stdout as output } from "node:process";
+
+loadEnv(); // repo .env (PIPELINE_CLI, OLLAMA_*, PIPELINE_BUDGET_USD) - system env wins
 
 const exit = (code, msg) => {
   if (msg) console.error(msg);
@@ -45,13 +52,17 @@ const gitRun = (args, cwd) => spawnSync("git", args, { stdio: "inherit", cwd });
 
 function hop(args, cwd, rid) {
   const script = join(process.cwd(), "scripts", "run-agent.mjs");
+  // ADR-0006/0007 honesty: the ledger and the trace must live in ONE place.
+  // Inherit the caller's PIPELINE_TRACE_BASE when set (one base, not two);
+  // otherwise the repo cwd is the base.
+  const base = process.env.PIPELINE_TRACE_BASE || process.cwd();
   const r = spawnSync(process.execPath, [script, ...args], {
     stdio: "inherit",
     cwd,
     env: {
       ...process.env,
       PIPELINE_RUN_ID: rid,
-      PIPELINE_TRACE_BASE: process.cwd(),
+      PIPELINE_TRACE_BASE: base,
     },
   });
   if (r.status)
@@ -69,12 +80,17 @@ const newestReport = (dir = "docs/plans") => {
 };
 
 const verdict = (file, cwd) => {
-  // Law v2: the verdict may sit as its OWN line after a report header block
-  // (metadata lines like Task id/Branch/Date may precede it). Search the
-  // first 12 lines for a verdict-as-own-line; fall back to the legacy
-  // 5-line word-search for older report shapes (eval.mjs parity kept).
-  const lines = readFileSync(file, "utf8").split("\n").slice(0, 12);
-  const own = lines.map((l) => l.trim()).find((l) => /^(PASS|FAIL)\b/.test(l));
+  // Law v3: verdict scan is WHOLE-FILE, top-down, own-line only.
+  // A verdict line is SHORT (<= 48 chars: `PASS`, `FAIL`, maybe a short
+  // tail like "PASS - all gates green"), so a long narrative sentence
+  // containing the word FAIL ("FAILED checks: none ...") can never be
+  // mistaken for a verdict. First own-line hit wins; legacy 5-line
+  // word-search stays as fallback for old report shapes. Default FAIL
+  // keeps the honest-stop law intact (unreadable report = not a pass).
+  const lines = readFileSync(file, "utf8").split("\n");
+  const own = lines
+    .map((l) => l.trim())
+    .find((l) => /^(PASS|FAIL)\b/.test(l) && l.length <= 48);
   if (own) return own.match(/^(PASS|FAIL)/)[1].toUpperCase();
   const head = lines.slice(0, 5).join("\n");
   return (head.match(/\b(PASS|FAIL)\b/i)?.[1] || "FAIL").toUpperCase();
@@ -158,9 +174,49 @@ async function committerStep(_name, report, cwd, rid) {
   }
   const a = spawnSync("git", ["add", ...add], { stdio: "inherit", cwd });
   if (a.status !== 0) exit(1, "git add failed");
-  const c = spawnSync("git", ["commit", "-m", msg], { stdio: "inherit", cwd });
+  // IDENTITY LAW: the committer commits as the REPO identity, pinned
+  // explicitly at the command line (-c) - enterprise rails can hijack
+  // authorship via inherited/global config (17.11 combat: amend
+  // --reset-author caught it). Missing identity = honest stop, never
+  // invent, never inherit silently.
+  const identName = git(["config", "user.name"]).stdout?.toString().trim();
+  const identMail = git(["config", "user.email"]).stdout?.toString().trim();
+  if (!identName || !identMail)
+    exit(
+      1,
+      "IDENTITY LAW: set repo git config user.name + user.email before the committer (identity is pinned per commit, never inherited silently)",
+    );
+  const c = spawnSync(
+    "git",
+    [
+      "-c",
+      `user.name=${identName}`,
+      "-c",
+      `user.email=${identMail}`,
+      "commit",
+      "-m",
+      msg,
+    ],
+    { stdio: "inherit", cwd },
+  );
   if (c.status !== 0) exit(1, "git commit failed");
   clog("committer", `\nCommitted: ${msg}`);
+  // COPY-TO-MAIN LAW: artifacts (plan/report/commit) are untracked in the
+  // sandbox - removing the worktree would take them with it (the 18.11 loss).
+  // The TOOL copies docs/plans back to the main checkout after the Y-commit.
+  if (String(cwd) !== process.cwd()) {
+    const plansSrc = join(cwd, "docs", "plans");
+    if (existsSync(plansSrc)) {
+      mkdirSync(join(process.cwd(), "docs", "plans"), { recursive: true });
+      let n = 0;
+      for (const f of readdirSync(plansSrc)) {
+        copyFileSync(join(plansSrc, f), join(process.cwd(), "docs", "plans", f));
+        n++;
+      }
+      if (n)
+        console.log(`copy-to-main: ${n} docs/plans artifact(s) copied to the main checkout`);
+    }
+  }
   console.log("\n" + "=".repeat(60));
   console.log("FINISH (human):");
   console.log(
@@ -226,7 +282,7 @@ async function fixLoop(opts) {
           '   2) git commit -m "feat(<task>): <what was built> (tests in same commit)"',
         );
         console.error(
-          "   3) re-run:  pnpm flow:fix   <- skips the fix hop, just re-tests",
+          "   3) re-run:  node scripts/flow.mjs --fix   <- skips the fix hop, just re-tests",
         );
         console.error("=".repeat(62));
         process.exit(1);
@@ -334,13 +390,17 @@ function ensureWorktree(name) {
         rmSync(join(wt, stub), { force: true });
       } catch {}
     }
-    console.log("deps: pnpm install --frozen-lockfile in sandbox ...");
-    // shell:true on Windows: pnpm is a .cmd shim (spawnSync without shell = ENOENT)
-    const pi = spawnSync(
-      "pnpm",
-      ["install", "--frozen-lockfile", "--prefer-offline"],
-      { cwd: wt, stdio: "inherit", shell: true },
-    );
+    console.log(`deps: ${getProfile(process.cwd()).install} in sandbox ...`);
+    // passport-driven (1.2): the install command comes from the project
+    // passport (docs/factory-profile.md), pnpm default otherwise.
+    const installParts = (getProfile(process.cwd()).install || "").split(/\s+/);
+    const pi = installParts.length
+      ? spawnSync(installParts[0], installParts.slice(1), {
+          cwd: wt,
+          stdio: "inherit",
+          shell: true,
+        })
+      : { status: 1, error: { code: "no-install-command" } };
     if (pi.status !== 0 || pi.error) {
       console.error(
         "FLOW STOP: pnpm install failed (" +
@@ -377,6 +437,14 @@ function latestSandbox() {
   return null;
 }
 
+
+// BUDGET CIRCUIT BREAKER (ADR-0004, queue item 4): cap = a choice via
+// PIPELINE_BUDGET_USD; unset = unlimited. Set -> month-to-date spend from
+// the ledger is checked BEFORE --fix and before any hop spawns; exhausted =
+// honest stop with the budget sheet as the receipt.
+const _bg = budgetGuard();
+if (_bg)
+  exit(1, "\n" + _bg + "\n(budget sheet: node scripts/budget.mjs)");
 if (arg1 === "--fix" || arg1 === "-fix") {
   const wt = latestSandbox();
   const wd = wt ?? process.cwd();
@@ -417,10 +485,32 @@ if (task && /^notion:/.test(task)) {
   task = out.pop();
   console.log("door resolved: " + task);
 }
+if (arg1 === "--next") {
+  // FIFO: the door itself picks the first To Do card (ids are machine-internal)
+  const r = spawnSync("node", ["scripts/notion-door.mjs", "--next"], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  if (r.status !== 0) exit(1, "door failed - see above");
+  const outn = r.stdout
+    .toString()
+    .trim()
+    .split("\n")
+    .map((l) => l.replace(/^door resolved:\s*/, ""))
+    .filter((l) => l.startsWith("tasks/"));
+  task = outn.pop();
+  console.log("door resolved: " + task);
+}
+// PROFILE GATE (researcher law, phase-4 1.5): the factory cannot start
+// without the project passport - no hops, no worktree, no cost, honest hint.
+if (!existsSync(join(process.cwd(), "docs", "factory-profile.md")))
+  exit(
+    1,
+    "\nPROFILE GATE: no docs/factory-profile.md in this project.\nRun:  node scripts/run-agent.mjs researcher -o docs/factory-profile.md \"build the project passport\"\nFactory starts ONLY with a project passport.",
+  );
 if (!task || !existsSync(task))
   exit(
     1,
-    "usage: pnpm flow tasks\\<date>-<name>.md   |   pnpm flow notion:<card-id> [--no-wt]   |   pnpm flow:fix",
+    "usage: node scripts/flow.mjs tasks\\<date>-<name>.md   |   node scripts/flow.mjs notion:<card-id> [--no-wt]   |   node scripts/flow.mjs --fix",
   );
 
 const name = task
@@ -457,6 +547,23 @@ if (opts.sandbox) {
     if (!existsSync(dstM)) copyFileSync(mcpSrc, dstM);
     console.log("mcp config copied into sandbox");
   }
+  // ADR-0007 #1: the sandbox gets its COMPLETE env - .env travels like
+  // .mcp.json (gitignored on both sides). Missing secrets then honest-stop
+  // at run-agent, never surface as 401 mysteries.
+  const envSrc = join(process.cwd(), ".env");
+  if (existsSync(envSrc)) {
+    copyFileSync(envSrc, join(wt, ".env"));
+    console.log(".env copied into sandbox");
+  }
+  // PASSPORT travels with the sandbox (1.2 law): hops run from wt, and
+  // getProfile reads docs/factory-profile.md from CWD — without this copy
+  // every hop silently defaults to the pnpm world (PM grammar rewrite lost).
+  const passSrc = join(process.cwd(), "docs", "factory-profile.md");
+  if (existsSync(passSrc)) {
+    mkdirSync(join(wt, "docs"), { recursive: true });
+    copyFileSync(passSrc, join(wt, "docs", "factory-profile.md"));
+    console.log("passport copied into sandbox");
+  }
 }
 
 const inWt = (p) => join(wt, p);
@@ -464,12 +571,12 @@ const inWt = (p) => join(wt, p);
 clog("planner", "\n===> PLANNER");
 if (hop(["planner", "-i", task], wt, rid) !== 0) exit(1, "planner hop failed");
 console.log(`\n>> plan written (in sandbox): ${inWt(plan)}`);
-if (!isY(await ask("Read the plan. Continue to developer? (Y/N): ")))
+const planGate = await ask("Read the plan. Continue to developer? (Y/N): ");
+trace.ev(rid, { event: "gate", gate: "plan", result: isY(planGate) ? "Y" : "N" });
+if (!isY(planGate))
   exit(0, "flow stopped at plan gate (sandbox preserved: work/" + name + ")");
-trace.ev(rid, { event: "gate", gate: "plan", result: "N" });
 
 clog("developer", "\n===> DEVELOPER");
-trace.ev(rid, { event: "gate", gate: "plan", result: "Y" });
 if (
   hop(
     ["developer", "-i", plan, "implement the plan from the input file"],
@@ -482,26 +589,88 @@ if (
 console.log("\n>> working tree after developer (sandbox):");
 spawnSync("git", ["status", "--short"], { stdio: "inherit", cwd: wt });
 spawnSync("git", ["diff", "--stat"], { stdio: "inherit", cwd: wt });
-if (!isY(await ask("Continue to tester? (Y/N): ")))
+const diffGate = await ask("Continue to tester? (Y/N): ");
+trace.ev(rid, { event: "gate", gate: "diff", result: isY(diffGate) ? "Y" : "N" });
+if (!isY(diffGate))
   exit(0, "flow stopped before tester");
-trace.ev(rid, { event: "gate", gate: "diff", result: "N" });
 
 clog("tester", "\n===> TESTER");
-trace.ev(rid, { event: "gate", gate: "diff", result: "Y" });
 if (hop(["tester", "-i", plan], wt, rid) !== 0) exit(1, "tester hop failed");
 
 console.log("\x1b[32m\n===> VERDICT\x1b[0m");
 console.log(
   readFileSync(inWt(report), "utf8").split("\n").slice(0, 3).join("\n"),
 );
-trace.ev(rid, {
-  event: "verdict",
-  result: verdict(inWt(report)).startsWith("FAIL") ? "FAIL" : "PASS",
-});
-if (verdict(inWt(report)).startsWith("FAIL"))
-  exit(1, "\nFAIL detected - auto fix loop:  pnpm flow:fix");
+// single verdict event: emitted AFTER verification so the trace carries
+// exactly one, machine-confirmed verdict (dedupe per round-3 N4).
+// FAIL circles are RECORDED (round-4 N4): a verdict FAIL is a trace fact
+// with its own circle_end - the most expensive circles leave a full receipt.
+if (verdict(inWt(report)).startsWith("FAIL")) {
+  trace.ev(rid, { event: "verdict", result: "FAIL" });
+  trace.ev(rid, { event: "circle_end", task, name, verdict: "FAIL" });
+  exit(1, "\nFAIL detected - auto fix loop:  node scripts/flow.mjs --fix");
+}
 console.log("PASS.");
+// ---- MACHINE-VERIFIED VERDICT LAW (dual review 23.11, R3; ADR-0002/0007)
+// A tester verdict is a MODEL CLAIM. The engine re-runs the passport's
+// gates (lint/typecheck/test, those that are known) and accepts the PASS
+// only if every re-run is green. Failures = honest stop, verdict demoted.
+const verifyVerdict = (wt, rid) => {
+  const P = getProfile(wt, undefined);
+  const gates = ["lint", "typecheck", "test", "build"].filter(
+    (g) => P[g] && P[g] !== "unknown" && String(P[g]).length < 400,
+  );
+  const vTimeout = Math.max(
+    30,
+    parseInt(process.env.PIPELINE_VERIFY_TIMEOUT || "600", 10) || 600,
+  );
+  const results = [];
+  for (const g of gates) {
+    const t0 = Date.now();
+    const r = spawnSync(P[g], [], {
+      cwd: wt,
+      shell: true,
+      timeout: vTimeout * 1000,
+      stdio: "inherit", // round-4: the human SEES the failing gate, not just its exit
+    });
+    const dur = Date.now() - t0;
+    const exitCode = r.status ?? (r.signal ? "timeout" : 1);
+    results.push({ gate: g, cmd: P[g], exit: exitCode, duration_ms: dur });
+    trace.ev(rid, { event: "verdict_verification", gate: g, cmd: P[g], exit: exitCode, duration_ms: dur });
+  }
+  const failed = results.find((r) => r.exit !== 0);
+  return { ok: !failed && results.length > 0, results, failed, gateCount: gates.length, empty: gates.length === 0 };
+};
+if (process.env.PIPELINE_VERIFY_GATES !== "0") {
+  clog("tester", "\n===> VERDICT VERIFICATION (machine re-runs the gates)");
+  const v = verifyVerdict(wt, rid);
+  for (const r of v.results)
+    clog("tester", `  ${r.exit === 0 ? "✓" : "✗"} ${r.gate} (${r.cmd}) exit=${r.exit} ${Math.round(r.duration_ms / 1000)}s`);
+  if (v.empty) {
+    // round-3 N4: a skipped verification is a TRACE fact, not a console line
+    trace.ev(rid, { event: "verdict_verification_skipped", reason: "no known gates in passport" });
+    clog("tester", "  (passport exposes no known gates - claim accepted, logged in trace)");
+  } else if (!v.ok) {
+    // demote the verdict: the machine contradicts the model's claim
+    trace.ev(rid, { event: "verdict", result: "FAIL", reason: "verdict_verification_failed", gate: v.failed.gate });
+    trace.ev(rid, { event: "circle_end", task, name, verdict: "FAIL" });
+    exit(
+      1,
+      `\nVERDICT VERIFICATION FAILED: ${v.failed.gate} exit=${v.failed.exit}\n` +
+        `tester said PASS, the machine disagrees - honest stop.\n` +
+        `fix, or PIPELINE_VERIFY_GATES=0 to opt out (logged).`,
+    );
+  } else
+    trace.ev(rid, { event: "verdict", result: "PASS", verified: true, gates: v.results.length });
+} else {
+  trace.ev(rid, { event: "verdict_verification_skipped", reason: "PIPELINE_VERIFY_GATES=0" });
+  trace.ev(rid, { event: "verdict", result: "PASS", verified: false });
+  clog("tester", "  (PIPELINE_VERIFY_GATES=0 - verdict accepted unverified, logged in trace)");
+}
 await committerStep(name, report, wt, rid);
+// circle_end: the run is complete (round-3: the event existed in trace.mjs
+// but was never emitted).
+trace.ev(rid, { event: "circle_end", task, name, verdict: "PASS" });
 // HTML report: zero model tokens, best-effort (silently skipped if missing)
 if (existsSync(join("scripts", "report.mjs"))) {
   spawnSync(process.execPath, ["scripts/report.mjs", rid], {

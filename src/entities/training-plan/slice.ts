@@ -5,12 +5,15 @@
 
 import type {
   GeneratePlanRequest,
+  OrthopedicSelection,
   PlanDay,
   PlanWeek,
   TrainingGoalId,
 } from "./types";
+import type { OrthopedicLimitationId } from "@entities/profile";
+import { ORTHOPEDIC_LIMITATION_IDS } from "@entities/profile";
 import { TRAINING_GOAL_IDS } from "./types";
-import type { UserProfile } from "@entities/profile";
+import type { LifestyleProfile, UserProfile } from "@entities/profile";
 
 /**
  * Filters plan weeks by exercise name query.
@@ -54,6 +57,10 @@ export function filterPlanWeeksByExerciseName(
  * @param profile Active user profile to send.
  * @param goals Selected goal ids in arbitrary click order.
  * @param hardware Ordered hardware source ids from feature config.
+ * @param lifestyle Optional lifestyle override merged into the profile payload;
+ *   omitting it sends the profile's own `lifestyle` field unchanged.
+ * @param orthopedic Optional orthopedic selection merged into the profile payload
+ *   and the top-level `caution`; omitting it sends the profile's own fields unchanged.
  * @returns New request object with canonicalized goals and copied arrays.
  * @remarks Do not pass this for re-compose; use RecomposePlanRequest there.
  */
@@ -61,12 +68,34 @@ export function buildGeneratePlanRequest(
   profile: UserProfile,
   goals: readonly TrainingGoalId[],
   hardware: readonly string[],
+  lifestyle?: LifestyleProfile,
+  orthopedic?: OrthopedicSelection,
 ): GeneratePlanRequest {
   const uniqueGoals = new Set<TrainingGoalId>(goals);
   const canonicalGoals = TRAINING_GOAL_IDS.filter((goal) => uniqueGoals.has(goal));
+
+  // WHY: single expression feeds request.caution AND the merged profile payload,
+  // so the two wire copies cannot drift (plan assumption A3).
+  const caution = orthopedic?.caution ?? profile.caution;
+
+  let nextProfile: UserProfile = profile;
+  if (orthopedic) {
+    const uniqueLimitations = new Set<OrthopedicLimitationId>(orthopedic.limitations);
+    const canonicalLimitations = ORTHOPEDIC_LIMITATION_IDS.filter((id) =>
+      uniqueLimitations.has(id),
+    );
+    // WHY: no-override path must keep the identical profile reference so callers
+    // can assert request identity/back-compat; only merge a new object when overridden.
+    nextProfile = { ...nextProfile, orthopedicLimitations: canonicalLimitations, caution };
+  }
+  if (lifestyle) {
+    nextProfile = { ...nextProfile, lifestyle };
+  }
+
   return {
-    profile,
+    profile: nextProfile,
     goals: [...canonicalGoals],
     hardware: [...hardware],
+    caution,
   };
 }

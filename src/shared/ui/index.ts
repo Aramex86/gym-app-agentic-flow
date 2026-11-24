@@ -27,3 +27,5 @@ export { InfoCard } from "./atoms/InfoCard";
 export type { InfoCardProps } from "./atoms/InfoCard";
 export { AlertBanner } from "./atoms/AlertBanner";
 export type { AlertBannerProps } from "./atoms/AlertBanner";
+export { ChoiceChipGroup } from "./molecules/ChoiceChipGroup";
+export type { ChoiceChipGroupProps, ChoiceChipOption } from "./molecules/ChoiceChipGroup";

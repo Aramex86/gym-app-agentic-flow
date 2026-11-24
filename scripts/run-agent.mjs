@@ -1,17 +1,18 @@
 // scripts/run-agent.mjs  role router for the multi-agent pipeline.
-// Resolution: RUN_MODEL env > role frontmatter model > pipeline.yaml table.
+// Resolution (ADR-0008): RUN_MODEL env > role frontmatter model > pipeline.yaml table.
 // (rail #2 Copilot: > copilot-table agents-pipeline.copilot.yaml > built-in defaults)
-// Spawn: chosen CLI (env PIPELINE_CLI = opencode | claude | copilot) headless in cwd.
+// Spawn: chosen CLI (env PIPELINE_CLI = claude | copilot — ADR-0002) headless in cwd.
 // Rail #2 (copilot, 2026-11-17 combat probe): copilot -p OK --silent id=claude-sonnet-5.5
 //   billing = premium requests; telemetry via --usage-output-file -> hop_usage.
-// Key safety: never prints OLLAMA_API_KEY (masked as ***).
+// Key safety: never prints OLLAMA_API_KEY (the token rides env, never logged).
 // No npm dependencies. Node >= 20.
 
-import { readFileSync, existsSync, openSync, closeSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, openSync, closeSync, rmSync, mkdirSync } from 'node:fs';
 import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { loadEnv } from './env.mjs';
+import { getProfile } from './profile.mjs';
 import { ev, snap, promptSnap, hopTail, reportDigest, readLatestUsage } from './trace.mjs';
 loadEnv();    // reads repo .env (PIPELINE_CLI, OLLAMA_*, RUN_MODEL)  system env wins
 
@@ -85,6 +86,15 @@ const COPILOT_DEFAULTS = {
 // role colors (ANSI): planner=green, developer=dark orange, tester=cyan
 const RESET = '\x1b[0m';
 const ROLE_COLOR = { planner: '\x1b[32m', developer: '\x1b[38;5;208m', tester: '\x1b[36m', committer: '\x1b[35m' };
+// QUIP BANK (night idea 18.11, вшито 19.11 после правок юзера = «как есть»):
+// light second slot under the spinner; rotates ~7s; lives ONLY while the
+// hop is alive; gates keep dry facts. Data (tail/timer) untouched.
+const QUIPS = {
+  planner:   ['consulting the magic 8-ball', 'drawing the blueprint', 'reading the future in a task card'],
+  developer: ['forging the hammer', 'untangling spaghetti', 'borrowing code from the future', 'convincing the compiler (it is not listening)'],
+  tester:    ['poking the bear', 'counting green checkmarks', 'trust nothing, verify everything'],
+  committer: ['stamping papers', 'cleaning fingerprints off the repo'],
+};
 const rc = (text) => (ROLE_COLOR[role] || '') + text + RESET;
 
 // args: <role> [-i input] [-o output] "context..."   (env AGENT_IN/OUT still honored as fallback)
@@ -97,7 +107,11 @@ for (let k = 1; k < rawArgs.length; k++) {
   else ctxParts.push(rawArgs[k]);
 }
 if (!role) exit(3, 'usage: node scripts/run-agent.mjs <role> [-i in-file] [-o out-file] "context"');
-const cliEarly = process.env.PIPELINE_CLI || 'opencode';
+// ADR-0002 #1: the unwalled `opencode` rail is REMOVED from the factory
+// default - the default is `claude` (walled). opencode stays as an explicit
+// opt-in rail; unknown rails die with a config error (honest, not silent).
+if (!process.env.PIPELINE_CLI) process.env.PIPELINE_CLI = 'claude';
+const cliEarly = process.env.PIPELINE_CLI;
 const table = cliEarly === 'copilot' ? (copilotTable() || COPILOT_DEFAULTS) : routingTable();
 // FIX 17.11: agents/<role>.md frontmatter `model:` is a RAIL #1 fact
 // (deepseek/glm ids live on Ollama). On rail #2 the contract model must
@@ -126,10 +140,15 @@ const inFileTxt = inFile && existsSync(inFile) ? `\n\nINPUT FILE (${inFile}):\n$
 const out = outFlag || autoOut || process.env.AGENT_OUT;  // expected artifact; verified after run
 
 const outDirective = out ? `\nOUTPUT PATH (write the artifact EXACTLY here - do not add dates or rename):\n${out}` : '';
-const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${ctx}${inFileTxt}${outDirective}`;
+
+// mkdir law (17.11): fresh worktrees lack docs/plans ( artifacts are untracked )
+// -> pre-create the artifact directory before the hop spawns (combat: plan fell into session-state)
+if (out) {
+  try { mkdirSync(path.dirname(path.join(process.cwd(), out)), { recursive: true }); } catch {}
+}const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${ctx}${inFileTxt}${outDirective}`;
 
 // --- spawn CLI ---
-const cli = process.env.PIPELINE_CLI || 'opencode';
+const cli = process.env.PIPELINE_CLI; // ADR-0002: default set above (claude); no silent opencode
 // claude: prompt rides on STDIN (argv only flags) -> multi-line, dash-proof,
 // immune to the ~8k Windows cmdline limit.
 // copilot (COMBAT 17.11): stdin transport DEAD - the CLI answers
@@ -168,7 +187,8 @@ function mcpMode2() {
 }
 
 const cmds = {
-  opencode: ['run', prompt, '--model', `ollama-cloud/${model}`],
+  // ADR-0002 conseq.: a rail without a tool wall does not ship. The
+  // unwalled `opencode` rail is DELETED (config error if requested).
   // NOTE: custom model IDs go by ENV  --model on argv is strictly validated
   // and aborts with [claude-code:unrecognized_model] for non-Anthropic ids
   // NOTE: --model belongs on ARGV: model-via-env (ANTHROPIC_MODEL) hits the
@@ -208,7 +228,7 @@ const cmds = {
 // MCP: repos declare servers in an .mcp.json (or custom path via env) - passed
 // to the CLI; ABSOLUTE path required (hops run in sandbox worktree cwds).
 // Role gates which MCP tools may be called via the SAME tools: frontmatter.
-const argv = cmds[cli] || exit(3, `config error: unknown PIPELINE_CLI "${cli}" (opencode | claude | copilot)`);
+const argv = cmds[cli] || exit(3, `config error: unknown PIPELINE_CLI "${cli}" — rails: claude | copilot (ADR-0002)`);
 // rail #2 argv transport: protect against silent cmd.exe truncation
 // v6: direct copilot.exe spawn -> CreateProcess limit ~32k (cmd.exe 8k gone)
 if (cli === 'copilot' && prompt.length > 30000) {
@@ -224,7 +244,31 @@ if (cli === 'copilot' && (process.env.PIPELINE_COPILOT_PROMPT_MODE || 'argv') ==
 // insert --allowedTools (per-role or default) and global --disallowedTools
 const roleTools = contractTools(role);
 const DEFAULT_TOOLS = 'Read,Edit,Write,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*)';
-const allowedTools = roleTools || DEFAULT_TOOLS;
+// PASPORT-DRIVEN TOOLS (1.2): role tool tokens written in the pnpm world
+// are rewritten to the project's own PM run-style from the passport;
+// pnpm world unchanged (identity), npm/yarn projects get their grammar.
+function rewriteTools(tools, profile) {
+  if (!tools || !profile || profile.package_manager === 'pnpm') return tools;
+  const pm = profile.package_manager;
+  const bin = (profile.install || '').split(/\s+/)[0] || pm;
+  const out = tools.split(',').map((raw) => {
+    const b = raw.trim().match(/^(Bash\()pnpm\s*:\*(\))$/);
+    if (b) return `${b[1]}${pm}:${b[2]}`;               // Bash(pnpm:*) -> Bash(uv:*)
+    const s = raw.trim().match(/^(Bash\()pnpm (lint|typecheck|test|build):\*(\))$/);
+    if (s) {
+      const cmd = profile[s[2]] && profile[s[2]] !== 'unknown' && !String(profile[s[2]]).startsWith('pnpm')
+        ? profile[s[2]] : `${pm} run ${s[2]}`;
+      const word = String(cmd).split(/\s+/)[0];
+      // uv-family runs real tools through the PM runner: `uv run pytest ...`
+      const runPrefix = /^(uv|poetry|pip)$/.test(bin) && !/^pnpm|^UNKNOWN/i.test(String(cmd))
+        ? `,Bash(${bin} run ${word}:*)` : '';
+      return `${s[1]}${cmd}:\*${s[3]}${runPrefix}`;      // Bash(pnpm test:*) -> Bash(pytest:*),Bash(uv run pytest:*)
+    }
+    return raw.trim();
+  }).join(',');
+  return out;
+}
+const allowedTools = rewriteTools(roleTools || DEFAULT_TOOLS, getProfile(process.cwd()));
 const DENY = 'Bash(git commit:*),Bash(git push:*),Bash(git merge:*),Bash(git checkout:*),Bash(git reset:*),Bash(git rebase:*)';
 if (cli === 'claude') {
   const i = argv.indexOf('--allowedTools');
@@ -242,7 +286,6 @@ if (cli === 'copilot') {
   }
 }
 const envs = {
-  opencode: {},
   copilot: {},   // auth lives in the CLI login state (copilot login / browser); no tokens here
   claude: {
     ANTHROPIC_BASE_URL: process.env.OLLAMA_BASE_URL || 'https://ollama.com',
@@ -258,9 +301,14 @@ const envs = {
   },
 };
 const env = { ...process.env, ...envs[cli] };
-if (cli === 'claude') env.ANTHROPIC_AUTH_TOKEN = process.env.OLLAMA_API_KEY || '';
+// SECRETS-PRESENCE LAW (ADR-0007 #2): a hop that needs a secret stops
+// honestly BEFORE spawning - never a confusing provider 401.
+if (cli === 'claude' && !process.env.OLLAMA_API_KEY)
+  exit(3, 'missing secret: OLLAMA_API_KEY is not set (.env / shell). ' +
+    'A rail-#1 hop without it would die as a provider 401 - honest stop instead (ADR-0007).');
+if (cli === 'claude') env.ANTHROPIC_AUTH_TOKEN = process.env.OLLAMA_API_KEY;
 
-const printable = `${cli} ${argv.join(' ').replace(/(sk|ntn|ntn_)\S+/g, '***').slice(0, 120)}... [model=${model}]`;
+const printable = `${cli} ${argv.join(' ').slice(0, 120)}... [model=${model}]`;
 console.log(rc(`[run-agent] ${printable}`));
 
 // SECURITY VISIBILITY: tools shown to the human as a readable list (the
@@ -306,6 +354,8 @@ function runClaudeLive(argv, env, prompt) {
     // CreateProcess handles multiline args and ~32k cmdline limit.
     const binName = (cli === 'copilot') ? 'copilot' : 'claude';
     const binArgs = argv;
+    // Tier-1 phase banner: one line per hop, role-colored, states rail+cwd
+    console.log(`${ROLE_COLOR[role] || ''}[run-agent] \u25b6 ${role.toUpperCase()} \u00b7 ${model} \u00b7 rail ${cli} \u00b7 ${path.basename(process.cwd())}${RESET}`);
     const p = spawn(binName, binArgs, { cwd: process.cwd(), env, stdio: ['pipe', logFd, logFd] });
     if (cli !== 'copilot' || process.env.PIPELINE_COPILOT_PROMPT_MODE === 'stdin') {
       p.stdin.write(prompt);
@@ -342,8 +392,28 @@ function runClaudeLive(argv, env, prompt) {
         resolve(124);
         return;
       }
-      if (!done) process.stdout.write(`\r${ROLE_COLOR[role] || ''}[run-agent] ${role}  ${model}  working ${Math.round((Date.now() - T0) / 1000)}s${RESET}   `);
-    }, 3000);
+      if (!done) {
+        // Tier-1 render: spinner frames + short last-activity tail
+        const frames = ['\u25d1','\u25d2','\u25d3','\u25cc','\u25d0','\u25ce'];
+        const f = frames[Math.floor((Date.now() - T0) / 400) % frames.length];
+        let tail = '';
+        try {
+          const txt = readFileSync(LOG_PATH, 'utf8').slice(-3000);
+          const ls = txt.split('\\r\\n').join('\n').split('\n').filter((x) => x.trim());
+          if (ls.length) tail = ls[ls.length - 1].replace(/\x1b\[[0-9;]*m/g, '').slice(0, 58);
+        } catch {}
+        const eta = Math.round((Date.now() - T0) / 1000);
+        // quip slot: SAME line as spinner/tail (single-line render, zero
+        // jumping - the 19.11 win32 two-line artifact is banned). Rotation
+        // ~7s, lives only while the hop is alive; tail trims to fit width.
+        const bank = QUIPS[role];
+        const quip = bank && bank.length ? bank[Math.floor((Date.now() - T0) / 7000) % bank.length] : '';
+        const width = (process.stdout.columns || 80) - 2;
+        const tailBudget = Math.max(16, width - `[run-agent] x ${role} ${eta}s `.length - (quip ? ` | quip: "${quip}"`.length : 0) - 4);
+        const tailShort = tail ? tail.slice(0, tailBudget) : '';
+        process.stdout.write(`\r${ROLE_COLOR[role] || ''}[run-agent] ${f} ${role} ${eta}s ${tailShort ? '\u2502 last: ' + tailShort : ''}${quip ? ` \u2502 quip: "${quip}"` : ''}${RESET}\u0020\u0020\u0020\x1b[K`);
+      }
+    }, 700);
     p.on('exit', (code) => {
       clearInterval(hb);
       closeSync(logFd);
@@ -394,7 +464,7 @@ if (runIsAsync) {
           used = { input_tokens: last.usage.input_tokens || 0, output_tokens: last.usage.output_tokens || 0, cache_read: last.usage.cache_read_input_tokens || 0, msgs: last.num_turns || 1, cost_usd: last.total_cost_usd };
           if (last.api_error_status) ev(RID, { event: 'hop_api_error', role, status: last.api_error_status });
         }
-      } catch {}
+      } catch (err) { console.error('[run-agent] telemetry parse failed: ' + (err && err.message || err)); }
       // Path C: rail #2 - copilot --usage-output-file JSON (probe #1 shape)
       if (!used && cli === 'copilot') {
         try {
@@ -407,7 +477,7 @@ if (runIsAsync) {
               ev(RID, { event: 'hop_rail2_cost', role, model, premium_requests: j.totalPremiumRequestCost, nano_aiu: j.totalNanoAiu });
             }
           }
-        } catch {}
+      } catch (err) { console.error('[run-agent] telemetry parse failed: ' + (err && err.message || err)); }
       }
       // Path B: transcript fallback (ccusage's own source)
       if (!used) used = readLatestUsage(cwdNow, T0 - 2000);

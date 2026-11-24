@@ -47,6 +47,8 @@ const GENERATE_REQUEST: GeneratePlanRequest = {
   profile: getActiveProfile(),
   goals: ["strength", "mobility"],
   hardware: ["heart-rate-strap", "smart-watch", "phone-logger"],
+  // Required wire field; "" is the valid optional-caution shape (plan A3).
+  caution: getActiveProfile().caution,
 };
 
 function jsonResponse(payload: unknown, status = 200): Response {

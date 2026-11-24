@@ -6,6 +6,16 @@ You are a coding agent working on an FSAA Vite 7 + react-router app. You follow 
 Every rule below carries a check marker and is verified by CI. If CI is red,
 fix the code OR the rule — never bypass the check.
 
+## Terminology & decisions
+
+<!--check: adr-glossary -->
+
+Domain terms (rail, hop, gate, verdict, run, door...) are defined ONCE in
+`docs/context/glossary.md` — reference it, do not re-explain. Settled
+decisions live in `docs/adr/` (index: `docs/adr/README.md`) — plan WITHIN
+accepted ADRs; conflicts are resolved by proposing a superseding ADR to
+the human, never by editing one.
+
 ## Commands
 
 <!--check: cmd-pnpm-install -->  `pnpm install` — install dependencies
@@ -92,7 +102,7 @@ node scripts/run-agent.mjs planner "task-id: plan-contract"
 #   with AGENT_IN=tasks/2026-11-10-plan-contract.md AGENT_OUT=docs/plans/2026-11-10-plan-contract-plan.md
 ```
 
-Env: PIPELINE_CLI=opencode|claude · RUN_MODEL (override one run) ·
+Env: PIPELINE_CLI=claude|copilot (ADR-0002; opencode rail удалён) · RUN_MODEL (override one run) ·
 OLLAMA_BASE_URL / OLLAMA_API_KEY (claude mode only).
 
 HARD RULES (unchanged): agents never push; merges to main by human only.

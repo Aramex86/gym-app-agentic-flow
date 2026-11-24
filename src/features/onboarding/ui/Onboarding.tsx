@@ -12,10 +12,17 @@ import {
   type TrainingGoalId,
   type TrainingPlan,
 } from "@entities/training-plan";
-import type { UserProfile } from "@entities/profile";
+import type {
+  LifestyleProfile,
+  OrthopedicLimitationId,
+  UserProfile,
+} from "@entities/profile";
 import { HARDWARE_IDS } from "../config/hardware";
+import { CAUTION_MAX_LENGTH } from "../config/limitations";
 import { GoalSelect } from "./GoalSelect";
 import { HardwareMap } from "./HardwareMap";
+import { LifestyleRecovery } from "./LifestyleRecovery";
+import { OrthopedicLimitations } from "./OrthopedicLimitations";
 import { PayloadPreview } from "./PayloadPreview";
 
 export interface OnboardingProps {
@@ -49,12 +56,27 @@ const pendingStyle = {
  */
 export function Onboarding(props: OnboardingProps): JSX.Element {
   const [goals, setGoals] = useState<TrainingGoalId[]>([]);
+  // WHY: seeded from the EFFECTIVE profile (override first) so a test/profile
+  // with non-default lifestyle is respected; edits stay session-local.
+  const [lifestyle, setLifestyle] = useState<LifestyleProfile>(() => ({
+    ...(props.profile ?? getActiveProfile()).lifestyle,
+  }));
+  // Same session-local seed model as lifestyle (plan A5): re-entering onboarding
+  // re-seeds both fields from the EFFECTIVE profile so they stay editable.
+  const [limitations, setLimitations] = useState<readonly OrthopedicLimitationId[]>(
+    () => [...(props.profile ?? getActiveProfile()).orthopedicLimitations],
+  );
+  const [caution, setCaution] = useState<string>(
+    () => (props.profile ?? getActiveProfile()).caution,
+  );
   const [status, setStatus] = useState<"idle" | "pending" | "error">("idle");
 
   const request = buildGeneratePlanRequest(
     props.profile ?? getActiveProfile(),
     goals,
     HARDWARE_IDS,
+    lifestyle,
+    { limitations, caution },
   );
   const composerOffline = !isComposerAvailable(useComposerStatus());
   const generateDisabled = goals.length === 0 || status === "pending" || composerOffline;
@@ -66,6 +88,26 @@ export function Onboarding(props: OnboardingProps): JSX.Element {
         ? current.filter((goal) => goal !== id)
         : [...current, id],
     );
+  }
+
+  function handleLifestyleChange(next: LifestyleProfile): void {
+    if (status === "pending") return; // same freeze rule as goal chips
+    setLifestyle(next);
+  }
+
+  function handleLimitationToggle(id: OrthopedicLimitationId): void {
+    if (status === "pending") return;
+    setLimitations((current) =>
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id],
+    );
+  }
+
+  function handleCautionChange(next: string): void {
+    if (status === "pending") return;
+    // WHY: native maxLength is UX; slicing also covers paste/programmatic input (plan A1).
+    setCaution(next.slice(0, CAUTION_MAX_LENGTH));
   }
 
   async function handleGenerate(): Promise<void> {
@@ -85,6 +127,14 @@ export function Onboarding(props: OnboardingProps): JSX.Element {
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Onboarding</h2>
       <GoalSelect selected={goals} onToggle={handleToggle} />
+      <LifestyleRecovery value={lifestyle} onChange={handleLifestyleChange} />
+      <OrthopedicLimitations
+        limitations={limitations}
+        caution={caution}
+        onToggle={handleLimitationToggle}
+        onCautionChange={handleCautionChange}
+        disabled={status === "pending"}
+      />
       <HardwareMap />
       <PayloadPreview request={request} />
       <Button

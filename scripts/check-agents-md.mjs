@@ -21,6 +21,7 @@
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { getProfile } from "./profile.mjs";
 
 /** Template shape: layer dirs required by the contract (fsaa-vite / Vite+react-router). */
 const LAYER_DIRS = ["src/app", "src/pages", "src/features", "src/entities", "src/shared"];
@@ -53,6 +54,9 @@ const md = readFileSync("AGENTS.md", "utf8");
 const ids = [
   ...new Set([...md.matchAll(/<!--check:\s*([\w-]+)\s*-->/g)].map((m) => m[1])),
 ];
+
+/** Passport (1.2): lockfile/PM facts come from docs/factory-profile.md, pnpm defaults otherwise. */
+const _pp = getProfile(process.cwd(), { readFileSync, existsSync, join });
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const scripts = pkg.scripts || {};
@@ -148,17 +152,18 @@ async function fromPlugin(id) {
  * Return contract: true = pass, false = generic fail, string[] = offending entries.
  */
 const checks = {
-  /** Pnpm is the package manager: a healthy lockfile exists. */
-  "cmd-pnpm-install": () => existsSync("pnpm-lock.yaml"),
+  /** The project's ONE lockfile, from the passport (1.2). */
+  "cmd-pnpm-install": () => existsSync(_pp.lockfile),
   "cmd-pnpm-dev": () => hasScript("dev"),
   "cmd-pnpm-lint": () => hasScript("lint"),
   "cmd-pnpm-typecheck": () => hasScript("typecheck"),
   "cmd-pnpm-build": () => hasScript("build"),
-  /** Exactly one lockfile in the repo: pnpm-lock.yaml. */
+  /** Exactly one lockfile in the repo: the passport's one (1.2). */
   "single-lockfile": () =>
-    existsSync("pnpm-lock.yaml") &&
-    !existsSync("package-lock.json") &&
-    !existsSync("yarn.lock"),
+    existsSync(_pp.lockfile) &&
+    ["pnpm-lock.yaml", "package-lock.json", "yarn.lock"]
+      .filter((l) => l !== _pp.lockfile)
+      .every((l) => !existsSync(l)),
   /** Contract layer dirs exist (plugin ui-location rule covers the contents). */
   "ui-location": async () => {
     const missing = LAYER_DIRS.filter((d) => !existsSync(d));
@@ -177,6 +182,19 @@ const checks = {
   "file-paths": () => CONTRACT_FILES.every(existsSync),
   /** Enforced by GitHub branch protection, not locally — always passes. */
   "pr-flow": () => true,
+  /** ADR + glossary adoption (ST-21 / ADR-0001): the machine laws have ONE
+   *  home - docs/adr/ (template + README index) and docs/context/glossary.md.
+   *  Mechanical truth: both exist, the template exists, the index lists 0001. */
+  "adr-glossary": () => {
+    const miss = [
+      !existsSync("docs/adr/README.md") && "docs/adr/README.md",
+      !existsSync("docs/adr/0000-template.md") && "docs/adr/0000-template.md",
+      !existsSync("docs/context/glossary.md") && "docs/context/glossary.md",
+    ].filter(Boolean);
+    if (miss.length) return ["missing: " + miss.join(", ")];
+    const idx = readFileSync("docs/adr/README.md", "utf8");
+    return /0001/.test(idx) ? true : ["docs/adr/README.md does not index ADR-0001"];
+  },
   /** Supply-chain policy: lifecycle scripts of dependencies must be blocked
    *  by default (pnpm 10+, allowlist-only builds). */
   "script-policy": () => {

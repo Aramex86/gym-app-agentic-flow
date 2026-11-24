@@ -144,7 +144,7 @@ gates:
 
 ### package.json/  (0 modules, 0 lines)
 
-### scripts/  (6 modules, 1042 lines)
+### scripts/  (9 modules, 2053 lines)
 #### scripts\check-agents-md.mjs  (266 lines)
 ```text
   L74: function fsaaLint() {
@@ -154,39 +154,65 @@ gates:
 ```text
   L6: export function loadEnv() {
 ```
-#### scripts\flow.mjs  (281 lines)
+#### scripts\eval.mjs  (211 lines)
+_no exports found_
+#### scripts\flow.mjs  (527 lines)
 ```text
-  L22: async function ask(question) {
-  L31: function hop(args, cwd, rid) {
-  L57: function parseCommitMd(text) {
-  L64: async function committerStep(_name, report, cwd, rid) {
-  L103: async function fixLoop(opts) {
-  L175: function ensureWorktreeIgnored() {
-  L180: function ensureWorktree(name) {
-  L199: function latestSandbox() {
+  L32: async function ask(question) {
+  L46: function hop(args, cwd, rid) {
+  L98: function parseCommitMd(text) {
+  L108: async function committerStep(_name, report, cwd, rid) {
+  L186: async function fixLoop(opts) {
+  L300: function ensureWorktreeIgnored() {
+  L307: function ensureWorktree(name) {
+  L359: function latestSandbox() {
 ```
 #### scripts\map.mjs  (91 lines)
 ```text
   L23: function walk(dir, files = []) {
   L36: function exportsOf(file) {
 ```
-#### scripts\run-agent.mjs  (276 lines)
+#### scripts\notion-door.mjs  (191 lines)
 ```text
-  L19: function routingTable() {
-  L39: function contractTools(role) {
-  L48: function contractModel(role) {
-  L56: function getRoleFile(role) {
-  L194: function runClaudeLive(argv, env, prompt) {
+  L39: function die(msg) {
+  L44: async function notion(path, method, body) {
+  L61: function findProp(props, ...names) {
+  L69: function richText(v) {
+  L75: function statusName(props) {
+  L81: function riskName(props) {
+  L86: function slugify(title) {
+  L93: async function queryDatabase(filter = null) {
+  L100: async function setInProgress(pageId, current, props = {}) {
+  L113: function writeTaskFile(card) {
+  L137: async function main() {
 ```
-#### scripts\trace.mjs  (107 lines)
+#### scripts\report.mjs  (119 lines)
+_no exports found_
+#### scripts\run-agent.mjs  (435 lines)
 ```text
-  L14: export function newRun(tag = '') {
-  L24: export const ev = (id, obj) => {
-  L28: export const promptSnap = (id, role, text) => {
-  L37: export const snap = (id, rel) => {
-  L46: export function watch(intervalMs = 4000) {
-  L66: export function runs() {
-  L71: export function show(idIn) {
+  L22: function routingTableFrom(cfg) {
+  L39: function routingTable() {
+  L44: function contractTools(role) {
+  L53: function contractModel(role) {
+  L61: function getRoleFile(role) {
+  L72: function copilotTable() {
+  L148: function copilotToolList(role, allowedToolsRaw) {
+  L162: function copilotDenyList() {
+  L166: function mcpMode2() {
+  L300: function runClaudeLive(argv, env, prompt) {
+```
+#### scripts\trace.mjs  (192 lines)
+```text
+  L15: export function newRun(tag = '') {
+  L25: export const ev = (id, obj) => {
+  L29: export const promptSnap = (id, role, text) => {
+  L38: export const snap = (id, rel) => {
+  L51: export const hopTail = (id, role, logPath, n = 40) => {
+  L70: export const reportDigest = (id, role, rel) => {
+  L90: export function readLatestUsage(cwd, sinceMs) {
+  L131: export function watch(intervalMs = 4000) {
+  L151: export function runs() {
+  L156: export function show(idIn) {
 ```
 
 ### src\app/  (1 modules, 51 lines)

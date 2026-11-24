@@ -32,10 +32,18 @@ model tables: agents-pipeline.yaml (rail #1) · agents-pipeline.copilot.yaml (ra
 - verdict law v2: PASS/FAIL own line <=12; artifact gates; SCOPE law
 - identity law: repo-local user.name/email set BEFORE committer (enterprise rails hijack authorship)
 - artifact mkdir law: output dirs pre-created before hop spawn
-- budget law ($100/mo): sonnet plans by default; opus only for complex plans
+- budget law: NO default cap — `PIPELINE_BUDGET_USD` env sets it when wanted; every hop prints its cost line; reported $ is an engine estimate (rail #1 uses the CLI rate table) — compare circles with it, reconcile with the provider dashboard
+- decisions: `docs/adr/` (superseded-only) + `docs/context/glossary.md` — contracts reference, never re-explain
 - secrets: env only; .env never committed; .mcp.json carries ${PLACEHOLDERS} only
 - sandbox hygiene: work/ and .pipeline/ local-only; worktree removed after merge
 
+## Live viewer (TUI V1)
+
+```text
+node scripts/tui.mjs        # in a second terminal, while a circle runs
+node scripts/tui.mjs --once # one plain frame, exit
+```
+
 ## Files
 
-scripts/ · agents/ · boards tables · docs/ guides · INSTALL.mjs · .env.sample
+scripts/ (incl. tui.mjs) · agents/ (5 roles, researcher offboard) · boards tables · docs/adr/ · docs/context/glossary.md · docs/ guides · INSTALL.mjs · .env.sample
