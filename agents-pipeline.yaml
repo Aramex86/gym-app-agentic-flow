@@ -15,7 +15,7 @@ gates:
 
 
 # NOT here (on purpose):
-# - CLI binary choice   -> env PIPELINE_CLI (opencode | claude) at run time
+# - CLI binary choice   -> env PIPELINE_CLI (claude | copilot — ADR-0002) at run time
 # - provider endpoint   -> env OLLAMA_BASE_URL
 # - API key             -> env only, never in files
 # - per-run overrides   -> env RUN_MODEL=kimi-k3.1 (wins over this table)

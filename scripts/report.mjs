@@ -33,7 +33,7 @@ const logDir = join(dir, 'logs');
 const logs = existsSync(logDir) ? readdirSync(logDir).map((f) => {
   const txt = readFileSync(join(logDir, f), 'utf8');
   let digest = null;
-  if (f.endsWith('-digest.log')) { try { digest = JSON.parse(txt); } catch {} }
+  if (f.endsWith('-digest.log')) { try { digest = JSON.parse(txt); } catch (e) { console.error('[report] digest parse skipped: ' + (e && e.message || e)); } }
   return { f, txt, digest };
 }) : [];
 

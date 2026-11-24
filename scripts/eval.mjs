@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync, rmS
 import { join, basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as trace from './trace.mjs';
+import { getProfile } from './profile.mjs';
 
 const exit = (code, msg) => { if (msg) console.error(msg); process.exit(code); };
 const root = resolve(process.cwd());
@@ -58,6 +59,26 @@ const base = g(['rev-parse', '--verify', 'develop']).trim() ? 'develop' : 'HEAD'
 const r = spawnSync('git', ['worktree', 'add', join('work', slug), '-b', br, base], { stdio: 'inherit' });
 if (r.status !== 0) exit(1, `worktree add failed (base ${base})`);
 console.log('sandbox: ' + wt);
+// ADR-0007 #1 (eval half, round-4 N2): the eval circle is a circle in the
+// ADR's sense - its sandbox gets the COMPLETE env: .env (gitignored,
+// secrets for the passport gates), .mcp.json, and the project passport.
+let envCopied = false;
+{
+  const { copyFileSync } = await import('node:fs');
+  for (const [src, dst] of [
+    [join(root, '.env'), join(wt, '.env')],
+    [join(root, '.mcp.json'), join(wt, '.mcp.json')],
+    [join(root, 'docs', 'factory-profile.md'), join(wt, 'docs', 'factory-profile.md')],
+  ]) {
+    if (existsSync(src)) {
+      mkdirSync(join(dst, '..'), { recursive: true });
+      copyFileSync(src, dst);
+      if (src.endsWith('.env')) envCopied = true;
+      console.log('sandbox copy: ' + basename(src));
+    }
+  }
+}
+if (!envCopied) console.error('EVAL WARN: no .env in the repo root - rail-#1 hops will honest-stop "missing secret" (shell-export to suppress).');
 
 // deps: fresh worktree lacks node_modules AND .bin shims - a junction is
 // not enough (proven by eval #3: junction showed packages but no .bin).
@@ -67,10 +88,12 @@ if (!existsSync(join(wt, 'node_modules', '.bin'))) {
   for (const stub of ['eslint.cmd', 'tsc.cmd', 'vitest.cmd', 'vite.cmd']) {
     try { rmSync(join(wt, stub), { force: true }); } catch {}
   }
-  console.log('deps: pnpm install --frozen-lockfile (offline store) ...');
-  // shell:true is MANDATORY on Windows: "pnpm" is a .cmd shim, and spawnSync
-  // without shell cannot execute .cmd at all (git.exe works, pnpm.cmd doesn't)
-  const pi = spawnSync('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], { cwd: wt, stdio: 'inherit', shell: true });
+  const installCmd = getProfile(root).install || 'pnpm install --frozen-lockfile --prefer-offline';
+  console.log(`deps: ${installCmd} (passport-driven) ...`);
+  // shell:true is MANDATORY on Windows: PM binaries are .cmd shims, and spawnSync
+  // without shell cannot execute .cmd at all (git.exe works, *.cmd doesn't)
+  const ip = installCmd.split(/\s+/);
+  const pi = spawnSync(ip[0], ip.slice(1), { cwd: wt, stdio: 'inherit', shell: true });
   if (pi.status !== 0 || pi.error) {
     console.error('EVAL STOP: pnpm install failed (' + (pi.error?.code || 'exit ' + pi.status) + ') - run it by hand in ' + wt + ' to see the real error');
     process.exit(1);                                  // honest stop: no hops without deps
@@ -89,7 +112,7 @@ const t0 = Date.now();
 const hop = (role, input, ctx) => {
   trace.ev(rid, { event: 'hop_start', role });
   const r = spawnSync(process.execPath, [join(root, 'scripts', 'run-agent.mjs'), role, '-i', input, ...(ctx ? [ctx] : [])],
-    { stdio: 'inherit', cwd: wt, env: { ...process.env, PIPELINE_RUN_ID: rid, PIPELINE_TRACE_BASE: root } });
+    { stdio: 'inherit', cwd: wt, env: { ...process.env, PIPELINE_RUN_ID: rid, PIPELINE_TRACE_BASE: process.env.PIPELINE_TRACE_BASE || root } });
   trace.ev(rid, { event: 'hop_end', role, exit: r.status, duration_ms: Date.now() - t0 });
   return r.status ?? 1;
 };
@@ -132,9 +155,10 @@ while (budgetRounds > 0 && fixRounds < budgetRounds) {
 
 // ---- grade (facts vs answer key) ----
 const reportText = existsSync(join(wt, reportRel)) ? readFileSync(join(wt, reportRel), 'utf8') : '';
-const first = reportText.split('\n').slice(0, 5).join(' ');
-const vm = first.match(/\b(PASS|FAIL)\b/i);
-const verdict = vm?.[1]?.toUpperCase() || (reportText ? 'FAIL' : 'MISSING');
+const ownEval = reportText.split('\n').map((l) => l.trim())
+  .find((l) => /^(PASS|FAIL)\b/.test(l) && l.length <= 48);
+const vm = ownEval ? ownEval.match(/^(PASS|FAIL)/) : null;
+const verdict = vm ? vm[1].toUpperCase() : (reportText ? 'FAIL' : 'MISSING');
 const missing = expected.files_exist.filter((f) => !existsSync(join(wt, f)));
 const filesOk = missing.length === 0;
 // scope = COMMITS of the exam branch (diff from develop), not the working
@@ -152,30 +176,39 @@ const pass = verdict === expected.verdict && filesOk && scopeOk && timeOk && fix
 
 
 // ---- token/cost rollup (usage events emitted by run-agent per hop) ----
+// R2 fix (dual review 23.11): the old block called `base()` as a function on
+// a string and read an undeclared `yamlObj` - both ReferenceErrors swallowed
+// by empty catch{}, so cost telemetry died invisibly. Now: explicit runs
+// dir, visible catch, and an honest n/a when no pricing table exists.
 let tokIn = 0, tokOut = 0, tokSum = null;
+const runsDir = join(process.env.PIPELINE_TRACE_BASE || root, '.pipeline', 'runs');
 try {
-  const events = readFileSync(join(base(), rid, 'trace.jsonl'), 'utf8').split('\n').filter(Boolean)
+  const events = readFileSync(join(runsDir, rid, 'trace.jsonl'), 'utf8').split('\n').filter(Boolean)
     .map((l) => JSON.parse(l)).filter((e) => e.event === 'hop_usage');
-  tokIn = events.reduce((a, e) => a + (e.input_tokens + e.cache_read || 0), 0);
+  tokIn = events.reduce((a, e) => a + (e.input_tokens || 0) + (e.cache_read || 0), 0);
   tokOut = events.reduce((a, e) => a + (e.output_tokens || 0), 0);
   if (tokIn || tokOut) tokSum = { input: tokIn, output: tokOut };
-} catch {}
+} catch (err) {
+  console.error('[eval] telemetry rollup skipped: ' + (err && err.message || err));
+}
 let costStr = 'n/a';
 try {
-  const pricing = yamlObj?.pricing || null;
-  if (pricing && tokSum) {
-    let acc = 0;
-    for (const e of Object.values(pricing)) {
-      acc += (tokSum.input * Number(e.in || 0) + tokSum.output * Number(e.out || 0)) / 1e6;
-    }
-    costStr = '$' + acc.toFixed(3);
+  const goldPricing = (fm.match(/pricing:\s*(\S+)/) || [])[1];
+  if (goldPricing && tokSum) {
+    const p = JSON.parse(goldPricing.replace(/([a-z]+):/g, '"$1":').replace(/'/g, '"'));
+    const acc = tokSum.output * Number(p.out || 0) / 1e6 + tokSum.input * Number(p.in || 0) / 1e6;
+    if (Number.isFinite(acc) && acc > 0) costStr = acc.toFixed(3);
+  } else if (tokSum) {
+    console.error('[eval] cost n/a: no pricing: field in the golden frontmatter (tokens still recorded)');
   }
-} catch {}
+} catch (err) {
+  console.error('[eval] pricing parse skipped: ' + (err && err.message || err));
+}
 // ---- scoreboard ----
 const resultsDir = 'evals/results';
 mkdirSync(resultsDir, { recursive: true });
 appendFileSync(join(resultsDir, 'scoreboard.jsonl'), JSON.stringify(
-  { date: new Date().toISOString().slice(0, 10), task: name, verdict, files_ok: filesOk, scope_ok: scopeOk, fix_rounds: fixRounds, seconds: Math.round(totalS), tokens: tokSum, cost_usd: costStr === 'n/a' ? null : costStr }) + '\n');
+  { date: new Date().toISOString().slice(0, 10), task: name, verdict, files_ok: filesOk, scope_ok: scopeOk, fix_rounds: fixRounds, seconds: Math.round(totalS), tokens: tokSum, cost_usd: costStr === 'n/a' ? null : Number(costStr) }) + '\n');
 
 const rows = readFileSync(join(resultsDir, 'scoreboard.jsonl'), 'utf8').split('\n').filter(Boolean)
   .map((l) => JSON.parse(l)).sort((a, z) => (a.task + a.date).localeCompare(z.task + z.date));

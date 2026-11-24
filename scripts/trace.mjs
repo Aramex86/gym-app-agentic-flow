@@ -9,6 +9,7 @@ import { mkdirSync, appendFileSync, copyFileSync, existsSync, readdirSync, readF
 import { join } from 'node:path';
 import { statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { getProfile } from './profile.mjs';
 
 const base = () => join(process.env.PIPELINE_TRACE_BASE || process.cwd(), '.pipeline', 'runs');
 
@@ -23,7 +24,7 @@ export function newRun(tag = '') {
 }
 
 export const ev = (id, obj) => {
-  try { appendFileSync(join(base(), id, 'trace.jsonl'), JSON.stringify({ ts: new Date().toISOString(), ...obj }) + '\n'); } catch {}
+  try { appendFileSync(join(base(), id, 'trace.jsonl'), JSON.stringify({ ts: new Date().toISOString(), ...obj }) + '\n'); } catch (e) { console.error('[trace] event write failed: ' + (e && e.message || e)); }
 };
 
 export const promptSnap = (id, role, text) => {
@@ -32,7 +33,7 @@ export const promptSnap = (id, role, text) => {
     const d = join(base(), id, 'prompts');
     mkdirSync(d, { recursive: true });
     appendFileSync(join(d, role + '.md'), text + '\n');
-  } catch {}
+  } catch (e) { console.error('[trace] event write failed: ' + (e && e.message || e)); }
 };
 
 export const snap = (id, rel) => {
@@ -41,7 +42,7 @@ export const snap = (id, rel) => {
     copyFileSync(rel, join(base(), id, 'artifacts', String(rel).replace(/[\\/]/g, '__')));
     if (existsSync(join('docs/plans', String(rel).split(/[\\/]/).pop())))
       copyFileSync(join('docs/plans', String(rel).split(/[\\/]/).pop()), join(base(), id, 'artifacts', String(rel).split(/[\\/]/).pop()));
-  } catch {}
+  } catch (e) { console.error('[trace] event write failed: ' + (e && e.message || e)); }
 };
 
 
@@ -59,10 +60,14 @@ export const hopTail = (id, role, logPath, n = 40) => {
     mkdirSync(d, { recursive: true });
     appendFileSync(join(d, role + '-tail.log'), tail + '\n');
     ev(id, { event: 'hop_tail_saved', role, lines: Math.min(lines.length, n) });
-  } catch {}
+  } catch (e) { console.error('[trace] event write failed: ' + (e && e.message || e)); }
 };
 
-const GATE_RE = /pnpm (lint|typecheck|test|build)|check-agents-md|vitest/i;
+// passport-driven gate regex (1.2): gate lines are recognized by the
+// project's OWN commands (from the passport), pnpm world by default.
+const _P = getProfile(process.cwd(), { readFileSync, existsSync: (p) => { try { readFileSync(p); return true; } catch { return false; } }, join: (...a) => a.join('/') });
+const _cmds = [_P.lint, _P.typecheck, _P.test, _P.build].filter((c) => c && c !== 'unknown').map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+const GATE_RE = new RegExp('(' + _cmds.join('|') + ')|check-agents-md|vitest', 'i');
 const BUG_RE = /(^|\n)#+\s*Bug\s+\d+[^\n]*/gi;
 // reportDigest: parse the role's artifact for machine gate lines and Bug
 // headers; store as structured events so "why did the run fail" is visible
@@ -140,7 +145,7 @@ export function watch(intervalMs = 4000) {
         try {
           const r = JSON.parse(l);
           console.log('[' + id.slice(-14) + '] ' + r.event + (r.role ? ' ' + r.role : '') + (r.gate ? ' ' + r.gate + ': ' + (r.result ?? '') : '') + (r.duration_ms ? ' ' + Math.round(r.duration_ms / 1000) + 's' : '') + (r.cwd ? ' @ ' + r.cwd : ''));
-        } catch {}
+        } catch (e) { console.error('[trace] artifact copy failed: ' + (e && e.message || e)); }
       });
     }
   };

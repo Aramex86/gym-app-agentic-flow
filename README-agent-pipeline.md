@@ -20,6 +20,9 @@ in cmd and PowerShell (no ExecutionPolicy concerns).
 | `.env` (gitignored) | `PIPELINE_CLI`, `OLLAMA_BASE_URL`, `OLLAMA_API_KEY` - env only, never in files |
 | `.pipeline-last-run.log` | full CLI output of the last hop (gitignored, local) |
 | `scripts/trace.mjs` | the black box: per-run JSONL trace + prompt/artifact snapshots; `trace.mjs show` = table of a finished run, `trace.mjs watch` = live event stream |
+| `scripts/tui.mjs` | live bottom-bar viewer (phase-4 TUI V1): run · task · phase · hop count · rail + live tail of `.pipeline-last-run.log` (JSON blobs compressed to fact lines) + `Σ month` budget ledger (env `PIPELINE_BUDGET_USD`, unset by default); `--once` = one plain frame; Ctrl+C only, history stays scrollable |
+| `docs/adr/` | Architecture Decision Records: settled decisions live here (superseded-only, never edited); index `docs/adr/README.md` |
+| `docs/context/glossary.md` | single source of terminology; AGENTS.md and role contracts reference it, never re-explain |
 | `.pipeline/runs/<run-id>/` | trace.jsonl (hop/gate/verdict events with cwd + branch), prompts/ (exact text sent), artifacts/ (copies) |
 
 Run artifacts (`docs/plans/`) are gitignored: plans and reports are run
@@ -59,7 +62,8 @@ pnpm flow:fix
 
 | Role | Model (table) | Writes | Gate duty |
 |---|---|---|---|
-| planner (green) | kimi-k3.1 | `docs/plans/<name>-plan.md` | checkable plan, FSAA mapping, never asks mid-turn |
+| researcher (offboard, v1.5) | passport-model | `docs/factory-profile.md` | reads the repo BEFORE circles: pnpm/uv facts, layer layout, unknown[] honesty; gate: no passport = honest stop |
+| planner (green) | kimi-k2.7-code (fallback proven) | `docs/plans/<name>-plan.md` | READ FIRST: glossary → ADR index → repo map; checkable plan, FSAA mapping, never asks mid-turn |
 | developer (orange) | glm-5.3-flash | code + tests | SCOPE: only plan files; runs finish gates honestly |
 | tester (cyan) | glm-5.3-flash | `<name>-report.md` | PASS/FAIL verdict; bug-log in human voice (What happened / Why it matters / How to fix / Evidence); commit-verify via git history, not the working tree |
 | committer (magenta) | glm-5.3-flash | `<name>-commit.md` | never touches git; the tool commits after human Y |
@@ -84,7 +88,9 @@ bare (no `:cloud`) and go on argv, never via env.
 
 While a hop runs, the terminal shows a colored
 `[run-agent] <role>  <model>  working Ns` (3s ticks). Full CLI output lands
-in `.pipeline-last-run.log`.
+in `.pipeline-last-run.log`. For a live view OUTSIDE the circle terminal:
+`node scripts/tui.mjs` (second terminal) — bottom bar + log tail + money;
+`--once` prints one plain frame and exits.
 
 ## Trace - the black box (always in the MAIN repo)
 
