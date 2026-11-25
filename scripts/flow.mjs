@@ -453,7 +453,7 @@ if (_bg)
 if (arg1 === "--cleanup" || arg1 === "-cleanup") {
   // ONE command to end a finished circle (Windows-proof; human runs it
   // AFTER the PR is merged). Replaces the 4-step manual dance.
-  const name = argv[argv.indexOf("--cleanup") + 1];
+  const name = process.argv[process.argv.indexOf("--cleanup") + 1];
   const workDir = join(process.cwd(), "work");
   const picked = name || (() => {
     if (!existsSync(workDir)) return null;
