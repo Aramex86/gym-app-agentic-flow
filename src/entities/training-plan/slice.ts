@@ -5,6 +5,7 @@
 
 import type {
   GeneratePlanRequest,
+  GenerateProfilePatch,
   OrthopedicSelection,
   PlanDay,
   PlanWeek,
@@ -61,6 +62,9 @@ export function filterPlanWeeksByExerciseName(
  *   omitting it sends the profile's own `lifestyle` field unchanged.
  * @param orthopedic Optional orthopedic selection merged into the profile payload
  *   and the top-level `caution`; omitting it sends the profile's own fields unchanged.
+ * @param onboarding Optional required-field patch (biometrics, experience tier)
+ *   applied to the profile payload LAST; omitting it sends the profile's own
+ *   biometrics/experienceTier unchanged.
  * @returns New request object with canonicalized goals and copied arrays.
  * @remarks Do not pass this for re-compose; use RecomposePlanRequest there.
  */
@@ -70,6 +74,7 @@ export function buildGeneratePlanRequest(
   hardware: readonly string[],
   lifestyle?: LifestyleProfile,
   orthopedic?: OrthopedicSelection,
+  onboarding?: GenerateProfilePatch,
 ): GeneratePlanRequest {
   const uniqueGoals = new Set<TrainingGoalId>(goals);
   const canonicalGoals = TRAINING_GOAL_IDS.filter((goal) => uniqueGoals.has(goal));
@@ -90,6 +95,15 @@ export function buildGeneratePlanRequest(
   }
   if (lifestyle) {
     nextProfile = { ...nextProfile, lifestyle };
+  }
+  // WHY: null is a meaningful explicit value (required onboarding field
+  // incomplete), so the guard is !== undefined, never truthiness — an explicit
+  // null must clear the field in the payload.
+  if (onboarding?.biometrics !== undefined) {
+    nextProfile = { ...nextProfile, biometrics: onboarding.biometrics };
+  }
+  if (onboarding?.experienceTier !== undefined) {
+    nextProfile = { ...nextProfile, experienceTier: onboarding.experienceTier };
   }
 
   return {

@@ -2,7 +2,10 @@ import { useState } from "react";
 import { HistoryTable, Button, ToggleChip } from "@shared/ui";
 import type { HistoryRowInfo } from "@shared/ui";
 import { PlanDisclaimer } from "@features/plan-disclaimer";
-import { PlanRecompose } from "@features/plan-recompose";
+import { PlanRecompose, PLAN_RECOMPOSE_ID } from "@features/plan-recompose";
+import { ExerciseFocusCharts } from "@features/progress-exercise-focus";
+import { HistoryLog } from "@features/progress-history";
+import { InsightCard } from "@features/progress-insight";
 import { getTrainingPlan } from "@entities/training-plan";
 import type { TrainingPlan } from "@entities/training-plan";
 
@@ -53,6 +56,15 @@ function handleBegin(row: HistoryRowInfo): void {
 
 function handleLog(row: HistoryRowInfo): void {
   console.info("[progress] log", row.exercise.id); // TODO: wire behavior
+}
+
+/* Scroll anchor target for the exercise-focus empty-state CTA (plan §8.3). */
+function scrollToComposer(): void {
+  // WHY: jsdom has no scrollIntoView — the optional call keeps tests
+  // node-safe while production scrolls smoothly to the composer.
+  document
+    .getElementById(PLAN_RECOMPOSE_ID)
+    ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
 }
 
 export function ProgressPage() {
@@ -106,6 +118,14 @@ export function ProgressPage() {
           <p style={cardValueStyle}>{totalSets}</p>
         </div>
       </div>
+
+      {/* Task A7/S6: insight card auto-loads its gate request on mount; the
+          history log works offline — a failing insight never blocks it. */}
+      <InsightCard />
+      {/* Plan §8.3: focus charts between insight and history — the existing
+          pairwise order assertions stay valid. */}
+      <ExerciseFocusCharts onCompose={scrollToComposer} />
+      <HistoryLog />
 
       <HistoryTable
         weeks={weeks}

@@ -5,6 +5,7 @@ export type { TrainingPlan, PlanWeek, PlanDay, PlanExercise } from "./types";
 export type {
   RecomposePlanRequest,
   GeneratePlanRequest,
+  GenerateProfilePatch,
   TrainingGoalId,
   OrthopedicSelection,
 } from "./types";

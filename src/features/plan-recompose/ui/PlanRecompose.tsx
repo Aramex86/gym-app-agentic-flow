@@ -24,6 +24,14 @@ export interface PlanRecomposeProps {
   profile?: UserProfile;
 }
 
+/**
+ * Stable DOM id of the composer wrapper — the scroll anchor for off-page
+ * CTAs (e.g. the exercise-focus empty state on the Progress page).
+ * @remarks Keep in sync with the wrapper div below; never renumber — other
+ *   features locate the composer by this exact id.
+ */
+export const PLAN_RECOMPOSE_ID = "plan-recompose";
+
 const wrapperStyle = {
   display: "grid",
   gap: "var(--sp-sm)",
@@ -75,7 +83,7 @@ export function PlanRecompose(props: PlanRecomposeProps): JSX.Element {
   }
 
   return (
-    <div style={wrapperStyle}>
+    <div style={wrapperStyle} id={PLAN_RECOMPOSE_ID}>
       <PromptInput
         label="Re-compose instruction"
         placeholder="e.g. Add a deload week and reduce volume"

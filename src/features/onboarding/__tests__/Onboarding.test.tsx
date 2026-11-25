@@ -7,13 +7,17 @@ import { Onboarding } from "../ui/Onboarding";
 import { buildGeneratePlanRequest, TRAINING_GOAL_IDS } from "@entities/training-plan";
 import type { TrainingPlan } from "@entities/training-plan";
 import {
-  DAILY_ACTIVITY_IDS,
+  BIOMETRIC_FIELDS,
   DEFAULT_LIFESTYLE_PROFILE,
   DEFAULT_ORTHOPEDIC_PROFILE,
+  EXPERIENCE_TIER_IDS,
   ORTHOPEDIC_LIMITATION_IDS,
   SLEEP_DURATION_IDS,
   STRESS_LEVEL_IDS,
+  DAILY_ACTIVITY_IDS,
   getActiveProfile,
+  resetActiveProfile,
+  saveActiveProfile,
 } from "@entities/profile";
 import { resetComposerStatus, setComposerStatus } from "@shared/config/composerStatus";
 import { resetActivePlan } from "@shared/config/activePlan";
@@ -25,6 +29,8 @@ import {
   STRESS_LEVEL_OPTIONS,
 } from "../config/lifestyle";
 import { CAUTION_MAX_LENGTH, CAUTION_PLACEHOLDER, ORTHOPEDIC_LIMITATION_OPTIONS } from "../config/limitations";
+import { BIOMETRIC_FIELD_OPTIONS } from "../config/biometrics";
+import { EXPERIENCE_TIER_OPTIONS } from "../config/experience";
 import onboardingSource from "../ui/Onboarding.tsx?raw";
 import goalSelectSource from "../ui/GoalSelect.tsx?raw";
 import hardwareMapSource from "../ui/HardwareMap.tsx?raw";
@@ -33,6 +39,10 @@ import lifestyleConfigSource from "../config/lifestyle.ts?raw";
 import orthopedicLimitationsSource from "../ui/OrthopedicLimitations.tsx?raw";
 import limitationsConfigSource from "../config/limitations.ts?raw";
 import payloadPreviewSource from "../ui/PayloadPreview.tsx?raw";
+import biometricsFormSource from "../ui/BiometricsForm.tsx?raw";
+import biometricsConfigSource from "../config/biometrics.ts?raw";
+import experienceTierSelectSource from "../ui/ExperienceTierSelect.tsx?raw";
+import experienceConfigSource from "../config/experience.ts?raw";
 
 const ONE_WEEK_PLAN: TrainingPlan = {
   schemaVersion: "0.1",
@@ -78,25 +88,54 @@ function previewCodeText(): string {
   return code?.textContent ?? "";
 }
 
+function tierGroup(): HTMLElement {
+  return screen.getByRole("group", { name: "Experience tier" });
+}
+
+/** Completes the required foundation fields: Age 30, Height 178, Weight 75,
+    tier Intermediate (scoped to the tier group — chips collide with lifestyle). */
+function fillRequiredProfile(): void {
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Age" }), { target: { value: "30" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Height" }), { target: { value: "178" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Weight" }), { target: { value: "75" } });
+  fireEvent.click(within(tierGroup()).getByRole("button", { name: "Intermediate" }));
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   resetComposerStatus();
   resetActivePlan();
+  // WHY: the profile store is module-global; every generating/reading test
+  // must leave the first-run fixture behind (plan A11).
+  resetActiveProfile();
 });
 
 describe("features onboarding B1", () => {
-  it("Generate toggles disabled state based on selected goals", () => {
+  it("Generate stays gated on required profile: goal selection alone does not enable it", () => {
     render(<Onboarding onGenerated={vi.fn()} />);
     const generate = generateButton();
     const mobility = screen.getByRole("button", { name: "Mobility" });
 
     expect(generate.disabled).toBe(true);
+    // Goal alone is not enough — biometrics/tier are unanswered.
     fireEvent.click(mobility);
+    expect(generate.disabled).toBe(true);
+
+    // After the required fill, the goal toggle again drives enable/disable.
+    fillRequiredProfile();
     expect(generate.disabled).toBe(false);
     fireEvent.click(mobility);
     expect(generate.disabled).toBe(true);
+    fireEvent.click(mobility);
+    expect(generate.disabled).toBe(false);
+  });
+
+  it("Generate stays disabled with the required profile filled but no goal", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+    fillRequiredProfile();
+    expect(generateButton().disabled).toBe(true);
   });
 });
 
@@ -130,6 +169,7 @@ describe("features onboarding B3", () => {
 
     render(<Onboarding onGenerated={onGenerated} />);
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
     fireEvent.click(generateButton());
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -147,6 +187,26 @@ describe("features onboarding B3", () => {
     resolveResponse(jsonResponse(ONE_WEEK_PLAN));
     await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
   });
+
+  it("sent payload carries numeric biometrics + tier id and never the volume multiplier", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
+
+    render(<Onboarding onGenerated={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
+    fireEvent.click(generateButton());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const sentBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1].body)) as {
+      profile: { biometrics: { ageYears: number; heightCm: number; weightKg: number }; experienceTier: string };
+    };
+    expect(sentBody.profile.biometrics).toEqual({ ageYears: 30, heightCm: 178, weightKg: 75 });
+    expect(sentBody.profile.experienceTier).toBe("intermediate");
+    // A4: only the tier id travels — the wire never carries a multiplier.
+    expect(String(fetchMock.mock.calls[0]?.[1].body)).not.toContain("multiplier");
+    expect(String(fetchMock.mock.calls[0]?.[1].body)).not.toContain('"volume":');
+  });
 });
 
 describe("features onboarding B4", () => {
@@ -158,6 +218,7 @@ describe("features onboarding B4", () => {
     render(<Onboarding onGenerated={onGenerated} />);
     const strength = screen.getByRole("button", { name: "Strength" });
     fireEvent.click(strength);
+    fillRequiredProfile();
     fireEvent.click(generateButton());
 
     const alert = await screen.findByRole("alert");
@@ -178,6 +239,7 @@ describe("features onboarding B4", () => {
     render(<Onboarding onGenerated={onGenerated} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
     fireEvent.click(generateButton());
 
     expect((await screen.findByRole("alert")).textContent).toBe(
@@ -196,15 +258,17 @@ describe("features onboarding B5 + gate + hardware + config", () => {
 
     render(<Onboarding onGenerated={onGenerated} />);
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
     fireEvent.click(generateButton());
 
     await waitFor(() => expect(onGenerated).toHaveBeenCalledWith(ONE_WEEK_PLAN));
     expect(onGenerated).toHaveBeenCalledTimes(1);
   });
 
-  it("disables Generate when composer is offline even with selected goals", () => {
+  it("disables Generate when composer is offline even with a complete profile", () => {
     render(<Onboarding onGenerated={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
     expect(generateButton().disabled).toBe(false);
     act(() => {
       setComposerStatus("offline");
@@ -227,6 +291,202 @@ describe("features onboarding B5 + gate + hardware + config", () => {
   });
 });
 
+describe("features onboarding — required biometrics + experience tier", () => {
+  function pressedTierNames(): string[] {
+    return within(tierGroup())
+      .queryAllByRole("button")
+      .filter((chip) => chip.getAttribute("aria-pressed") === "true")
+      .map((chip) => chip.textContent ?? "");
+  }
+
+  it("renders Body metrics with three spinbuttons and Training experience with three unpressed chips", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+
+    expect(screen.getByRole("heading", { name: "Body metrics" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Training experience" })).toBeTruthy();
+    expect(screen.getByRole("spinbutton", { name: "Age" })).toBeTruthy();
+    expect(screen.getByRole("spinbutton", { name: "Height" })).toBeTruthy();
+    expect(screen.getByRole("spinbutton", { name: "Weight" })).toBeTruthy();
+
+    expect(tierGroup()).toBeTruthy();
+    for (const option of EXPERIENCE_TIER_OPTIONS) {
+      const chip = within(tierGroup()).getByRole("button", { name: option.label });
+      expect(chip.getAttribute("aria-pressed")).toBe("false");
+    }
+    expect(pressedTierNames()).toEqual([]);
+  });
+
+  it("first-run preview carries profile.biometrics: null and profile.experienceTier: null", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+
+    const preview = JSON.parse(previewCodeText()) as {
+      profile: { biometrics: unknown; experienceTier: unknown };
+    };
+    expect(preview.profile.biometrics).toBeNull();
+    expect(preview.profile.experienceTier).toBeNull();
+  });
+
+  it("empty biometrics with a goal keeps Generate disabled and shows required hints", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+
+    expect(generateButton().disabled).toBe(true);
+    expect(screen.getByText("Age is required.")).toBeTruthy();
+    expect(screen.getByText("Height is required.")).toBeTruthy();
+    expect(screen.getByText("Weight is required.")).toBeTruthy();
+  });
+
+  it("biometrics without a tier keeps Generate disabled", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Age" }), { target: { value: "30" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Height" }), { target: { value: "178" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Weight" }), { target: { value: "75" } });
+
+    expect(generateButton().disabled).toBe(true);
+    fireEvent.click(within(tierGroup()).getByRole("button", { name: "Intermediate" }));
+    expect(generateButton().disabled).toBe(false);
+  });
+
+  it("out-of-range age shows the exact message and keeps Generate disabled", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Age" }), { target: { value: "105" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Height" }), { target: { value: "178" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Weight" }), { target: { value: "75" } });
+
+    expect(screen.getByText("Age must be between 13 and 100 years.")).toBeTruthy();
+    expect(generateButton().disabled).toBe(true);
+
+    // Fixing the age re-enables (with a tier picked).
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Age" }), { target: { value: "30" } });
+    fireEvent.click(within(tierGroup()).getByRole("button", { name: "Intermediate" }));
+    expect(generateButton().disabled).toBe(false);
+  });
+
+  it("decimal age is rejected as a whole-number field, decimal weight is accepted", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Age" }), { target: { value: "30.5" } });
+    expect(screen.getByText("Age must be a whole number.")).toBeTruthy();
+
+    fillRequiredProfile();
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Weight" }), { target: { value: "75.5" } });
+    expect(screen.queryByText("Weight must be a whole number.")).toBeNull();
+    const preview = JSON.parse(previewCodeText()) as { profile: { biometrics: { weightKg: number } } };
+    expect(preview.profile.biometrics.weightKg).toBe(75.5);
+  });
+
+  it("valid input + tier updates the preview to numeric biometrics and the tier id", () => {
+    render(<Onboarding onGenerated={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
+
+    const preview = JSON.parse(previewCodeText()) as {
+      profile: { biometrics: { ageYears: number; heightCm: number; weightKg: number }; experienceTier: string };
+    };
+    expect(preview.profile.biometrics).toEqual({ ageYears: 30, heightCm: 178, weightKg: 75 });
+    expect(preview.profile.experienceTier).toBe("intermediate");
+  });
+
+  it("pending freezes the number inputs and ignores tier clicks", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReturnValueOnce(new Promise<Response>(() => {}));
+
+    render(<Onboarding onGenerated={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
+    fireEvent.click(generateButton());
+    expect(generateButton().disabled).toBe(true);
+
+    const age = screen.getByRole("spinbutton", { name: "Age" }) as HTMLInputElement;
+    const height = screen.getByRole("spinbutton", { name: "Height" }) as HTMLInputElement;
+    const weight = screen.getByRole("spinbutton", { name: "Weight" }) as HTMLInputElement;
+    expect(age.disabled).toBe(true);
+    expect(height.disabled).toBe(true);
+    expect(weight.disabled).toBe(true);
+
+    fireEvent.click(within(tierGroup()).getByRole("button", { name: "Advanced" }));
+    expect(pressedTierNames()).toEqual(["Intermediate"]);
+  });
+
+  it("successful generate persists the sent profile via getActiveProfile()", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
+    const onGenerated = vi.fn();
+
+    render(<Onboarding onGenerated={onGenerated} />);
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
+    fireEvent.click(generateButton());
+    await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
+
+    const stored = getActiveProfile();
+    expect(stored.biometrics).toEqual({ ageYears: 30, heightCm: 178, weightKg: 75 });
+    expect(stored.experienceTier).toBe("intermediate");
+  });
+
+  it("nothing is persisted on a failed generate", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 500));
+    const onGenerated = vi.fn();
+
+    render(<Onboarding onGenerated={onGenerated} />);
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
+    fireEvent.click(generateButton());
+    await screen.findByRole("alert");
+
+    expect(getActiveProfile().biometrics).toBeNull();
+    expect(getActiveProfile().experienceTier).toBeNull();
+  });
+
+  it("a persisted profile seeds the form values and pressed tier on re-entry", () => {
+    saveActiveProfile({
+      ...getActiveProfile(),
+      biometrics: { ageYears: 41, heightCm: 182, weightKg: 88.5 },
+      experienceTier: "advanced",
+    });
+
+    render(<Onboarding onGenerated={vi.fn()} />);
+
+    const age = screen.getByRole("spinbutton", { name: "Age" }) as HTMLInputElement;
+    const height = screen.getByRole("spinbutton", { name: "Height" }) as HTMLInputElement;
+    const weight = screen.getByRole("spinbutton", { name: "Weight" }) as HTMLInputElement;
+    expect(age.value).toBe("41");
+    expect(height.value).toBe("182");
+    expect(weight.value).toBe("88.5");
+    expect(pressedTierNames()).toEqual(["Advanced"]);
+    // Stored data makes the CTA ready with only a goal.
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    expect(generateButton().disabled).toBe(false);
+  });
+
+  it("profile override seeds the required fields the same way (test-only prop contract)", () => {
+    render(
+      <Onboarding
+        onGenerated={vi.fn()}
+        profile={{
+          ...getActiveProfile(),
+          biometrics: { ageYears: 55, heightCm: 171, weightKg: 60 },
+          experienceTier: "novice",
+        }}
+      />,
+    );
+
+    expect((screen.getByRole("spinbutton", { name: "Age" }) as HTMLInputElement).value).toBe("55");
+    expect(
+      within(tierGroup()).getByRole("button", { name: "Novice" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("keeps option ids aligned with the canonical entity tuples", () => {
+    expect(BIOMETRIC_FIELD_OPTIONS.map((option) => option.id)).toEqual([...BIOMETRIC_FIELDS]);
+    expect(EXPERIENCE_TIER_OPTIONS.map((option) => option.id)).toEqual([...EXPERIENCE_TIER_IDS]);
+  });
+});
+
 describe("features onboarding — source guards", () => {
   it("ui sources contain no hardcoded colors, fetch/axios, or react-router", () => {
     const sources = [
@@ -238,19 +498,27 @@ describe("features onboarding — source guards", () => {
       orthopedicLimitationsSource,
       limitationsConfigSource,
       payloadPreviewSource,
+      biometricsFormSource,
+      biometricsConfigSource,
+      experienceTierSelectSource,
+      experienceConfigSource,
     ];
     for (const source of sources) {
       expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}|rgb\(|fetch\s*\(|axios|react-router/i);
     }
   });
 
-  it("onboarding lifestyle and orthopedic sources leak no data off the device (payload is the only egress)", () => {
+  it("onboarding lifestyle, biometrics and orthopedic sources leak no data off the device (payload is the only egress)", () => {
     const sources = [
       onboardingSource,
       lifestyleRecoverySource,
       lifestyleConfigSource,
       orthopedicLimitationsSource,
       limitationsConfigSource,
+      biometricsFormSource,
+      biometricsConfigSource,
+      experienceTierSelectSource,
+      experienceConfigSource,
     ];
     for (const source of sources) {
       expect(source).not.toMatch(/localStorage|sessionStorage|sendBeacon/i);
@@ -333,13 +601,14 @@ describe("features onboarding — lifestyle & recovery", () => {
     expect(previewCodeText()).toBe(before);
   });
 
-  it("generate with only a goal selected POSTs the preview body including default lifestyle", async () => {
+  it("generate with a goal and the required profile POSTs the preview body including default lifestyle", async () => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
     const onGenerated = vi.fn();
 
     render(<Onboarding onGenerated={onGenerated} />);
     fireEvent.click(screen.getByRole("button", { name: "Endurance" }));
+    fillRequiredProfile();
     fireEvent.click(generateButton());
 
     await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
@@ -356,6 +625,7 @@ describe("features onboarding — lifestyle & recovery", () => {
 
     render(<Onboarding onGenerated={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
     fireEvent.click(generateButton());
     expect(generateButton().disabled).toBe(true);
 
@@ -475,6 +745,7 @@ describe("features onboarding — orthopedic limitations", () => {
 
     expect(generateButton().disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Fat loss" }));
+    fillRequiredProfile();
     expect(generateButton().disabled).toBe(false);
   });
 
@@ -488,6 +759,7 @@ describe("features onboarding — orthopedic limitations", () => {
     fireEvent.click(within(limitationGroup()).getByRole("button", { name: "Wrist" }));
     fireEvent.click(within(limitationGroup()).getByRole("button", { name: "Custom" }));
     fireEvent.change(cautionTextarea(), { target: { value: "no loaded wrist extension" } });
+    fillRequiredProfile();
     fireEvent.click(generateButton());
 
     await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
@@ -512,6 +784,7 @@ describe("features onboarding — orthopedic limitations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
     fireEvent.click(within(limitationGroup()).getByRole("button", { name: "Shoulder" }));
     fireEvent.change(cautionTextarea(), { target: { value: "frozen text" } });
+    fillRequiredProfile();
     fireEvent.click(generateButton());
     expect(generateButton().disabled).toBe(true);
 

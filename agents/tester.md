@@ -43,3 +43,14 @@ NEVER: modify product code, push, merge.
   paths (work/* sandbox copies), re-run scoped: `pnpm exec vitest run --dir src`.
   Judge results by TRACKED files only - worktree copies are stale garbage, not
   product regressions; note the fact in the report instead of failing.
+
+## SELF-REPORTING (the engine reads it, board 21.11)
+
+When you lack knowledge you need (a file, a mechanism, a convention of this
+repo), say so EXPLICITLY on its own line, exactly:
+
+KNOWLEDGE GAP: <what is missing, one short sentence>
+
+The engine records each such line as a trace event (max 3) - the factory
+reads them first when it learns what it is missing. Write the gap, then
+continue with your best assumption; a gap is never an excuse to stop.

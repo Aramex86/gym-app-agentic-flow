@@ -1,8 +1,8 @@
 // scripts/flow.mjs - the pipeline Flow: full circle + fix loop + committer step.
 // SANDBOX MODE (default): every circle runs in its own git worktree copy of
 // the repo -> hops never touch your main working tree; results land on a
-// dedicated feat/<name> branch in the work/ dir. Cleanup: after merge,
-//   git worktree remove work/<name>
+// dedicated feat/<name> branch in the work/ dir. Cleanup after merge:
+//   node scripts/flow.mjs --cleanup <name>   (one command; Windows-proof)
 // Opt-out: pnpm flow tasks\<x>.md --no-wt (run everything in main checkout).
 // Usage:
 //   pnpm flow tasks\<date>-<name>.md     planner->[Y]->developer->[Y]->tester->[committer Y]
@@ -23,10 +23,13 @@ import { spawnSync } from "node:child_process";
 import { join, resolve, isAbsolute, basename as pathBasename } from "node:path";
 import readline from "node:readline/promises";
 import * as trace from "./trace.mjs";
+import { stdin as input, stdout as output } from "node:process";
 import { getProfile } from "./profile.mjs";
 import { loadEnv } from "./env.mjs";
 import { guard as budgetGuard } from "./budget.mjs";
-import { stdin as input, stdout as output } from "node:process";
+import { copyFileSync as _copy } from "node:fs"; // (also used dynamically elsewhere)
+import * as changedTests from "./changed-tests.mjs";
+import { maybeRunAutoDiag } from "./auto-diag.mjs";
 
 loadEnv(); // repo .env (PIPELINE_CLI, OLLAMA_*, PIPELINE_BUDGET_USD) - system env wins
 
@@ -230,12 +233,12 @@ async function committerStep(_name, report, cwd, rid) {
   console.log(
     "  4) " +
       (cwd !== process.cwd()
-        ? "git worktree remove " + wtRef + " --force; git branch -d feat/<name>"
+        ? "node scripts/flow.mjs --cleanup <name>   (one command; Windows-proof)"
         : "(no worktree in this run)"),
   );
   console.log("=".repeat(60));
 
-  console.log(`After merge, cleanup: git worktree remove ${cwd}`);
+  console.log(`After merge, cleanup: node scripts/flow.mjs --cleanup ${pathBasename(cwd)}`);
 }
 
 // ---------- FIX LOOP ----------
@@ -442,9 +445,37 @@ function latestSandbox() {
 // PIPELINE_BUDGET_USD; unset = unlimited. Set -> month-to-date spend from
 // the ledger is checked BEFORE --fix and before any hop spawns; exhausted =
 // honest stop with the budget sheet as the receipt.
+// round-9 §9: the hospital's 'pre' exam runs AFTER the profile gate and the
+// maintenance commands — "first circle of the day" means a circle, exactly.
 const _bg = budgetGuard();
 if (_bg)
   exit(1, "\n" + _bg + "\n(budget sheet: node scripts/budget.mjs)");
+if (arg1 === "--cleanup" || arg1 === "-cleanup") {
+  // ONE command to end a finished circle (Windows-proof; human runs it
+  // AFTER the PR is merged). Replaces the 4-step manual dance.
+  const name = process.argv[process.argv.indexOf("--cleanup") + 1];
+  const workDir = join(process.cwd(), "work");
+  const picked = name || (() => {
+    if (!existsSync(workDir)) return null;
+    const list = readdirSync(workDir).filter((d) => !d.startsWith("."));
+    return list.length === 1 ? list[0] : null;
+  })();
+  if (!picked)
+    exit(3, "--cleanup needs a sandbox name (or exactly ONE sandbox left in work/).\nusage: node scripts/flow.mjs --cleanup 2026-11-24-map-refresh");
+  const wt = join(workDir, picked);
+  if (existsSync(wt)) rmSync(wt, { recursive: true, force: true }); // kills node_modules/dist leftovers too
+  spawnSync("git", ["worktree", "prune"], { stdio: "ignore", cwd: process.cwd() });
+  const br = "feat/" + picked;
+  const del = spawnSync("git", ["branch", "-d", br], { stdio: "pipe", cwd: process.cwd() });
+  console.log(`removed work/${picked} (dir + worktree state)`);
+  if (del.status === 0)
+    console.log(`branch ${br} deleted (-d only works if already merged — safe).`);
+  else {
+    const hint = (del.stderr ? del.stderr.toString() : "").trim().split("\n")[0];
+    console.log(`branch ${br} left in place: ${hint || "not deleted"}.\nAfter the PR is merged: git pull origin develop && git branch -d ${br}`);
+  }
+  exit(0);
+}
 if (arg1 === "--fix" || arg1 === "-fix") {
   const wt = latestSandbox();
   const wd = wt ?? process.cwd();
@@ -457,12 +488,73 @@ if (arg1 === "--fix" || arg1 === "-fix") {
   process.exit(0);
 }
 
+// ---------- RESUME — CHECKPOINTS (queue item #4; born 25.11 combat, 2 burns) ----------
+// A circle died mid-way (max-turns, provider blip)? The sandbox with the
+// already-paid plan is preserved: --resume <name> [stage] skips researcher/
+// planner entirely and continues from developer / tester / verdict+committer.
+if (arg1 === "--resume" || arg1 === "-resume") {
+  const rname = process.argv[process.argv.indexOf("--resume") + 1];
+  const stage = (process.argv[process.argv.indexOf("--resume") + 2] || "developer").toLowerCase();
+  if (!rname)
+    exit(3, "usage: node scripts/flow.mjs --resume <sandbox-name> [developer|tester|verdict]");
+  const rwt = join(process.cwd(), "work", rname);
+  if (!existsSync(rwt))
+    exit(3, `resume: no sandbox work/${rname} — nothing to continue.`);
+  if (!existsSync(join(rwt, "docs", "plans", rname + "-plan.md")))
+    exit(3, `resume: no plan in that sandbox (died before the planner) — nothing to resume.`);
+  const rid2 = trace.newRun("resume-" + rname);
+  trace.ev(rid2, { event: "circle_start", task: "resume:" + rname, name: rname, from: stage });
+  clog("resume", `\n===> RESUME: ${rname} from ${stage.toUpperCase()} (planner already paid — skipped)`);
+  if (stage === "developer") {
+    clog("developer", "\n===> DEVELOPER");
+    if (hop(["developer", "-i", join("docs", "plans", rname + "-plan.md"), "implement the plan from the input file"], rwt, rid2) !== 0)
+      exit(1, "developer hop failed");
+    console.log("\n>> working tree after developer (sandbox):");
+    spawnSync("git", ["status", "--short"], { stdio: "inherit", cwd: rwt });
+    spawnSync("git", ["diff", "--stat"], { stdio: "inherit", cwd: rwt });
+    const dg = await ask("Continue to tester? (Y/N): ");
+    trace.ev(rid2, { event: "gate", gate: "diff", result: isY(dg) ? "Y" : "N" });
+    if (!isY(dg)) exit(0, "flow stopped before tester (sandbox preserved)");
+  } else {
+    trace.ev(rid2, { event: "gate", gate: "diff", result: "Y" });
+  }
+  if (stage !== "verdict") {
+    clog("tester", "\n===> TESTER");
+    if (hop(["tester", "-i", join("docs", "plans", rname + "-plan.md")], rwt, rid2) !== 0) exit(1, "tester hop failed");
+  }
+  console.log("\x1b[32m\n===> VERDICT\x1b[0m");
+  console.log(readFileSync(join(rwt, "docs", "plans", rname + "-report.md"), "utf8").split("\n").slice(0, 3).join("\n"));
+  if (process.env.PIPELINE_VERIFY_GATES !== "0") {
+    clog("tester", "\n===> VERDICT VERIFICATION (machine re-runs the gates)");
+    const v = verifyVerdict(rwt, rid2);
+    for (const r of v.results)
+      clog("tester", `  ${r.exit === 0 ? "✓" : "✗"} ${r.gate} (${r.cmd}) exit=${r.exit} ${Math.round(r.duration_ms / 1000)}s`);
+    if (v.empty) {
+      trace.ev(rid2, { event: "verdict_verification_skipped", reason: "no known gates in passport" });
+      clog("tester", "  (passport exposes no known gates - claim accepted, logged in trace)");
+    } else if (!v.ok) {
+      trace.ev(rid2, { event: "verdict", result: "FAIL", reason: "verdict_verification_failed", gate: v.failed.gate });
+      trace.ev(rid2, { event: "circle_end", task: "resume:" + rname, name: rname, verdict: "FAIL" });
+      exit(1, `\nVERDICT VERIFICATION FAILED: ${v.failed.gate} exit=${v.failed.exit} - honest stop.`);
+    } else trace.ev(rid2, { event: "verdict", result: "PASS", verified: true, gates: v.results.length });
+  } else {
+    trace.ev(rid2, { event: "verdict_verification_skipped", reason: "PIPELINE_VERIFY_GATES=0" });
+    trace.ev(rid2, { event: "verdict", result: "PASS", verified: false });
+    clog("tester", "  (PIPELINE_VERIFY_GATES=0 - verdict accepted unverified, logged in trace)");
+  }
+  await committerStep(rname, "docs/plans/" + rname + "-report.md", rwt, rid2);
+  trace.ev(rid2, { event: "circle_end", task: "resume:" + rname, name: rname, verdict: "PASS" });
+  maybeRunAutoDiag({ root: process.cwd(), phase: "post" });
+  console.log(`\nresumed circle complete: work/${rname}`);
+  process.exit(0);
+}
+
 console.log("\x1b[32m===> FLOW\x1b[0m");
 console.log(
   "SANDBOX MODE: hops run in their own git worktree copy; your main tree stays clean.",
 );
 console.log(
-  "Cleanup after merge: git worktree remove work/<name>. Opt-out: --no-wt.",
+  "Cleanup after merge: node scripts/flow.mjs --cleanup <name>. Opt-out: --no-wt.",
 );
 let task = arg1,
   opts = {};
@@ -512,6 +604,10 @@ if (!task || !existsSync(task))
     1,
     "usage: node scripts/flow.mjs tasks\\<date>-<name>.md   |   node scripts/flow.mjs notion:<card-id> [--no-wt]   |   node scripts/flow.mjs --fix",
   );
+
+// HOSPITAL AUTOMATION ('pre' exam; round-9 §9: placed after the PROFILE GATE
+// and after every maintenance command exit — a circle is actually starting).
+maybeRunAutoDiag({ root: process.cwd(), phase: "pre" });
 
 const name = task
   .replace(/^.*[\\/]/, "")
@@ -615,11 +711,64 @@ console.log("PASS.");
 // A tester verdict is a MODEL CLAIM. The engine re-runs the passport's
 // gates (lint/typecheck/test, those that are known) and accepts the PASS
 // only if every re-run is green. Failures = honest stop, verdict demoted.
-const verifyVerdict = (wt, rid) => {
+function verifyVerdict(wt, rid) {
   const P = getProfile(wt, undefined);
   const gates = ["lint", "typecheck", "test", "build"].filter(
     (g) => P[g] && P[g] !== "unknown" && String(P[g]).length < 400,
   );
+  // TARGETED-TEST LAW (master 24.11, round-6 T1 fix): the developer's work is
+  // UNCOMMITTED at verdict time - so the change set is the WORKING TREE vs
+  // the fork point (`git diff <merge-base>`), untracked files appended.
+  // Full `test` stays as the nightly/statistics run, not a circle gate.
+  let targetedNote = "";
+  try {
+    const { parseDiff, mapToTests, targetedGate } = changedTests;
+    const base = (() => {
+      for (const b of ["develop", "main"]) {
+        const m = spawnSync("git", ["rev-parse", "--verify", b], { cwd: wt, stdio: "pipe" });
+        if (m.status === 0) return b;
+      }
+      return null; // round-6 T3: no fork point known -> honest skip, no HEAD~1 guess
+    })();
+    if (base) {
+      const mb = spawnSync("git", ["merge-base", "HEAD", base], { cwd: wt, stdio: "pipe" });
+      const tracked = mb.status === 0
+        ? spawnSync("git", ["diff", "--name-only", mb.stdout.toString().trim()], { cwd: wt, stdio: "pipe" })
+        : { status: 1, stdout: Buffer.alloc(0) };
+      const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard"], { cwd: wt, stdio: "pipe" });
+      if (tracked.status === 0) {
+        // committed+unstaged working-tree diff vs fork point, PLUS untracked
+        // brand-new test files (a new test IS the deliverable).
+        const changedFiles = [
+          ...parseDiff(tracked.stdout.toString()),
+          ...parseDiff(untracked.stdout.toString()),
+        ];
+        const { tests, structural } = mapToTests(changedFiles);
+        const cmd = targetedGate(P, tests, structural);
+        if (cmd) {
+          P.test = cmd; // swap the full suite for the targeted run
+          targetedNote = `targeted: ${tests.length} mapped test file(s) vs ${base}`;
+        } else if (structural) {
+          targetedNote = "targeted skipped: structural changes - full gate is the honest check";
+        } else if (tests.length === 0) {
+          targetedNote = "targeted skipped: no code files changed";
+        } else {
+          targetedNote = "targeted skipped: no test-targeted template in the passport - full gate runs";
+        }
+      } else {
+        targetedNote = "targeted skipped: git diff failed";
+      }
+    } else {
+      targetedNote = "targeted skipped: no fork point (develop/main) - full gate runs";
+    }
+    // round-6 T2: the law must never degrade silently
+    console.log(targetedNote);
+    trace.ev(rid, { event: "verdict_verification", targeted: targetedNote });
+  } catch (e) {
+    targetedNote = "targeted skipped: " + (e && e.message || e);
+    console.log(targetedNote);
+    trace.ev(rid, { event: "verdict_verification", targeted: targetedNote });
+  }
   const vTimeout = Math.max(
     30,
     parseInt(process.env.PIPELINE_VERIFY_TIMEOUT || "600", 10) || 600,
@@ -640,7 +789,7 @@ const verifyVerdict = (wt, rid) => {
   }
   const failed = results.find((r) => r.exit !== 0);
   return { ok: !failed && results.length > 0, results, failed, gateCount: gates.length, empty: gates.length === 0 };
-};
+}
 if (process.env.PIPELINE_VERIFY_GATES !== "0") {
   clog("tester", "\n===> VERDICT VERIFICATION (machine re-runs the gates)");
   const v = verifyVerdict(wt, rid);
@@ -671,6 +820,10 @@ await committerStep(name, report, wt, rid);
 // circle_end: the run is complete (round-3: the event existed in trace.mjs
 // but was never emitted).
 trace.ev(rid, { event: "circle_end", task, name, verdict: "PASS" });
+// HOSPITAL AUTOMATION (master, 25.11): ADLC reviews the history after every
+// 5th circle — zero commands, read-only, no models. Opt-out
+// PIPELINE_AUTO_DIAG=0.
+maybeRunAutoDiag({ root: process.cwd(), phase: "post" });
 // HTML report: zero model tokens, best-effort (silently skipped if missing)
 if (existsSync(join("scripts", "report.mjs"))) {
   spawnSync(process.execPath, ["scripts/report.mjs", rid], {

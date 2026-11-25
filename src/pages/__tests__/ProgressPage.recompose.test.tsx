@@ -3,11 +3,16 @@
    directive keeps protected vite.config.ts untouched; same raw role/attr
    style as ProgressPage.test.tsx — no jest-dom, globals off, so cleanup()
    and vi.unstubAllGlobals() are explicit in afterEach). fetch is stubbed
-   with vi.stubGlobal (plan A7: tests never hit the network); the wire and
-   validation layers are pinned by the entity and feature suites. */
+   with vi.stubGlobal via a URL-AWARE implementation (plan A7: the page now
+   auto-loads the AI review insight on mount, so single-shot mocks would be
+   consumed by it; /api/progress/insight gets its own valid payload and the
+   call-count assertions filter to /api/plan). Alert queries are scoped with
+   `within` to the re-compose wrapper so the insight card can never collide
+   with the composer error. The wire and validation layers are pinned by the
+   entity and feature suites. */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, within, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { ProgressPage } from "../ProgressPage";
 import type { TrainingPlan } from "@entities/training-plan";
 
@@ -37,6 +42,14 @@ const ONE_WEEK_PLAN: TrainingPlan = {
   ],
 };
 
+/* Valid gate payload for the mount-time insight request (docs/contracts/
+   progress-insight.md shape; periodId matches the sample's derived period). */
+const VALID_INSIGHT = {
+  periodId: "last-4-weeks",
+  model: "kimi-k3.1",
+  insight: "Bench progressed twice; squat PR at 122.5 kg e1RM.",
+};
+
 const fetchMock = vi.fn<(input: string, init: RequestInit) => Promise<Response>>();
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -45,6 +58,30 @@ function jsonResponse(payload: unknown, status = 200): Response {
     status,
     json: () => Promise.resolve(payload),
   } as unknown as Response;
+}
+
+/* URL-aware stub: the mount-time insight request cannot consume the
+   one-week-plan response (plan A7). `planOutcome` is what POST /api/plan
+   returns for the test at hand. */
+function stubFetch(planOutcome: { payload: unknown; status: number } = {
+  payload: ONE_WEEK_PLAN,
+  status: 200,
+}): void {
+  vi.stubGlobal("fetch", fetchMock);
+  fetchMock.mockImplementation((input: string) => {
+    if (input === "/api/progress/insight") {
+      return Promise.resolve(jsonResponse(VALID_INSIGHT));
+    }
+    if (input === "/api/plan") {
+      return Promise.resolve(jsonResponse(planOutcome.payload, planOutcome.status));
+    }
+    // Unknown URLs (e.g. a composer healthcheck) count as healthy 2xx.
+    return Promise.resolve(jsonResponse({}, 200));
+  });
+}
+
+function urlCalls(url: string): Array<readonly [string, RequestInit]> {
+  return fetchMock.mock.calls.filter(([callUrl]) => callUrl === url);
 }
 
 function historyRows(): HTMLElement[] {
@@ -59,6 +96,10 @@ function sendButton(): HTMLButtonElement {
   return screen.getByRole("button", { name: "Send" }) as HTMLButtonElement;
 }
 
+function recomposeWrapper(): HTMLElement {
+  return sendButton().closest("div") as HTMLElement;
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -67,6 +108,7 @@ afterEach(() => {
 
 describe("pages ProgressPage — prompt box placement (plan A2)", () => {
   it("renders the labeled textarea after the heading and disclaimer, before the history table", () => {
+    stubFetch(); // mount-time insight request must not hit the network (A7)
     const { container } = render(<ProgressPage />);
 
     const textbox = instructionBox();
@@ -93,8 +135,7 @@ describe("pages ProgressPage — prompt box placement (plan A2)", () => {
 
 describe("pages ProgressPage — wire-through (plan acceptance 2/7)", () => {
   it("send POSTs profile + current plan + instruction and the returned plan re-renders metrics + table", async () => {
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
+    stubFetch();
     render(<ProgressPage />);
 
     expect(historyRows().length).toBe(40);
@@ -106,10 +147,13 @@ describe("pages ProgressPage — wire-through (plan acceptance 2/7)", () => {
 
     await waitFor(() => expect(historyRows().length).toBe(1));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/plan");
-    expect(fetchMock.mock.calls[0]?.[1].method).toBe("POST");
-    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1].body));
+    // Plan A7: the mount-time insight request is filtered away — ONLY the
+    // composer call counts here.
+    expect(urlCalls("/api/plan").length).toBe(1);
+    const planCall = urlCalls("/api/plan")[0]!;
+    expect(planCall[0]).toBe("/api/plan");
+    expect(planCall[1].method).toBe("POST");
+    const body = JSON.parse(String(planCall[1].body));
     expect(body.instruction).toBe("make it a one-week full-body plan");
     expect(body.plan.planId).toBe("sample-4w-upper-lower");
     expect(body.profile.id).toBe("profile-active");
@@ -122,14 +166,15 @@ describe("pages ProgressPage — wire-through (plan acceptance 2/7)", () => {
 
 describe("pages ProgressPage — composer failure (plan acceptance 6)", () => {
   it("HTTP 500 shows the fixed alert copy and keeps the original 40 rows", async () => {
-    vi.stubGlobal("fetch", fetchMock);
-    fetchMock.mockResolvedValueOnce(jsonResponse({}, 500));
+    stubFetch({ payload: {}, status: 500 });
     render(<ProgressPage />);
 
     fireEvent.change(instructionBox(), { target: { value: "add cardio" } });
     fireEvent.click(sendButton());
 
-    const alert = await screen.findByRole("alert");
+    // Scoped `within` the re-compose wrapper (plan A7): the AI review card's
+    // own alert lives outside this subtree and cannot collide.
+    const alert = await within(recomposeWrapper()).findByRole("alert");
     expect(alert.textContent).toBe("Could not re-compose the plan. Please try again.");
     expect(historyRows().length).toBe(40);
     expect(screen.getByText("Weeks").nextElementSibling?.textContent).toBe("4");

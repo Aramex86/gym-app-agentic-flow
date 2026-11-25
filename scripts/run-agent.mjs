@@ -370,13 +370,14 @@ function runClaudeLive(argv, env, prompt) {
     const HOP_TIMEOUT = parseInt(process.env.PIPELINE_HOP_TIMEOUT || '900', 10) * 1000;
     let done = false;
     p.on('exit', () => { done = true; });
+    let quietStarted = false;
     const hb = setInterval(() => {
       // kill-switch: create .pipeline-stop in the repo root -> this hop is
       // terminated within 3s. No more hunting orphan processes by hand.
       if (existsSync(path.join(root, '.pipeline-stop'))) {
         done = true;
         p.kill('SIGKILL');
-        try { rmSync(path.join(root, '.pipeline-stop')); } catch {}
+try { rmSync(path.join(root, '.pipeline-stop')); } catch {}
         clearInterval(hb);
         closeSync(logFd);
         console.error(`\n[run-agent] KILLED by .pipeline-stop (kill-switch used on ${role})`);
@@ -392,27 +393,47 @@ function runClaudeLive(argv, env, prompt) {
         resolve(124);
         return;
       }
-      if (!done) {
-        // Tier-1 render: spinner frames + short last-activity tail
-        const frames = ['\u25d1','\u25d2','\u25d3','\u25cc','\u25d0','\u25ce'];
-        const f = frames[Math.floor((Date.now() - T0) / 400) % frames.length];
-        let tail = '';
-        try {
-          const txt = readFileSync(LOG_PATH, 'utf8').slice(-3000);
-          const ls = txt.split('\\r\\n').join('\n').split('\n').filter((x) => x.trim());
-          if (ls.length) tail = ls[ls.length - 1].replace(/\x1b\[[0-9;]*m/g, '').slice(0, 58);
-        } catch {}
-        const eta = Math.round((Date.now() - T0) / 1000);
-        // quip slot: SAME line as spinner/tail (single-line render, zero
-        // jumping - the 19.11 win32 two-line artifact is banned). Rotation
-        // ~7s, lives only while the hop is alive; tail trims to fit width.
-        const bank = QUIPS[role];
-        const quip = bank && bank.length ? bank[Math.floor((Date.now() - T0) / 7000) % bank.length] : '';
-        const width = (process.stdout.columns || 80) - 2;
-        const tailBudget = Math.max(16, width - `[run-agent] x ${role} ${eta}s `.length - (quip ? ` | quip: "${quip}"`.length : 0) - 4);
-        const tailShort = tail ? tail.slice(0, tailBudget) : '';
-        process.stdout.write(`\r${ROLE_COLOR[role] || ''}[run-agent] ${f} ${role} ${eta}s ${tailShort ? '\u2502 last: ' + tailShort : ''}${quip ? ` \u2502 quip: "${quip}"` : ''}${RESET}\u0020\u0020\u0020\x1b[K`);
-      }
+      // SANDBOX-UNIVERSAL SPINNER LAW v2 (26.11): NO in-place redraw by
+      // default on ANY machine - the curtain class is banned. Status prints
+      // as plain lines: once at start, then every 30s, plus the exit line.
+      // Live in-place ticking is strictly opt-in (PIPELINE_LIVE_SPINNER=1)
+      // for terminals proven to redraw correctly.
+        if (process.env.PIPELINE_LIVE_SPINNER === '1') {
+          const TTYOUT = process.stdout.isTTY === true;
+          if (!TTYOUT) return;
+          if (!done) {
+            const frames = ['\u25d1','\u25d2','\u25d3','\u25cc','\u25d0','\u25ce'];
+            const f = frames[Math.floor((Date.now() - T0) / 400) % frames.length];
+            let tail = '';
+            try {
+              const txt = readFileSync(LOG_PATH, 'utf8').slice(-3000);
+              const ls = txt.split('\r\n').join('\n').split('\n').filter((x) => x.trim());
+              const activity = ls.filter((x) => !/^\[claude-code:/.test(x.trim()));
+              if (activity.length) tail = activity[activity.length - 1].replace(/\x1b\[[0-9;]*m/g, '').slice(0, 58);
+              else if (ls.length) tail = 'working - no model activity yet';
+            } catch {}
+            const eta = Math.round((Date.now() - T0) / 1000);
+            const bank = QUIPS[role];
+            const quip = bank && bank.length ? bank[Math.floor((Date.now() - T0) / 7000) % bank.length] : '';
+            const width = (process.stdout.columns || 80) - 2;
+            const tailBudget = Math.max(16, width - `[run-agent] x ${role} ${eta}s `.length - (quip ? ` | quip: "${quip}"`.length : 0) - 4);
+            const tailShort = tail ? tail.slice(0, tailBudget) : '';
+            process.stdout.write(`\r${ROLE_COLOR[role] || ''}[run-agent] ${f} ${role} ${eta}s ${tailShort ? '\u2502 last: ' + tailShort : ''}${quip ? ` \u2502 quip: "${quip}"` : ''}${RESET}\u0020\u0020\u0020\x1b[K`);
+          }
+        } else {
+          // quiet line every 30s (0 quiet lines then the exit line is fine)
+          const eta = Math.round((Date.now() - T0) / 1000);
+          if (eta > 0 && eta % 30 === 0) {
+            let lastShort = '';
+            try {
+              const txt = readFileSync(LOG_PATH, 'utf8').slice(-3000);
+              const ls = txt.split('\r\n').join('\n').split('\n').filter((x) => x.trim());
+              const activity = ls.filter((x) => !/^\[claude-code:/.test(x.trim()));
+              if (activity.length) lastShort = activity[activity.length - 1].replace(/\x1b\[[0-9;]*m/g, '').slice(0, 58);
+            } catch {}
+            process.stdout.write(`[run-agent] ${role} ${eta}s${lastShort ? ' | last: ' + lastShort : ''}\n`);
+          }
+        }
     }, 700);
     p.on('exit', (code) => {
       clearInterval(hb);
@@ -452,6 +473,27 @@ if (runIsAsync) {
     snap(RID, out);
     ev(RID, { event: 'hop_end', role, model, cwd: cwdNow, branch, exit: code ?? 1, duration_ms: Date.now() - T0, artifact: (out && existsSync(out)) ? out : null, note: (code === 130) ? 'kill-switch' : (code === 124 ? 'timeout' : undefined) });
     hopTail(RID, role, LOG_PATH);                                   // v3: keep stdout tail for forensics
+    // KNOWLEDGE GAP WRITER (board 21.11, round-8 R7-2): the reader side (doctor/
+    // adlc) shipped before the writer. Hops flag gaps by writing lines
+    // "KNOWLEDGE GAP: <what>" in their result text (role contracts say to);
+    // the engine turns each into a trace event (deduped, capped at 3).
+    // round-8: parses the WHOLE log - both the plain-text result (default
+    // output) and any "type":"result" JSON - so the marker works with or
+    // without PIPELINE_OUT_FORMAT=json.
+    try {
+      const txt = readFileSync(LOG_PATH, 'utf8');
+      const seen = new Set();
+      for (const m of txt.matchAll(/KNOWLEDGE GAP:\s*(.+)/gi)) {
+        const what = m[1].toString().slice(0, 160).trim();
+        const key = what.toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        ev(RID, { event: 'knowledge_gap', role, what });
+        if (seen.size >= 3) break;
+      }
+      // round-8 D4-style honesty: keep the JSON path for the structured usage
+      // read below, but never let the gap scan fail the hop.
+    } catch { /* no GAP extraction is never fatal - it is a hint, not a gate */ }
     reportDigest(RID, role, out && existsSync(out) ? out : null);  // v3: gates + bug digest
     if (code === 0) {                                                // v3 token telemetry
       // Path A: stdout result JSON (--output-format json) - has usage + total_cost_usd

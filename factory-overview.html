@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Honest Machine — factory-kit</title>
+<style>
+:root{
+  --bg:#F5F1EA;          /* warm cream */
+  --bg2:#EDE7DC;
+  --ink:#2F2E28;         /* warm near-black */
+  --muted:#6B675C;
+  --line:#DED6C8;
+  --card:#FBF9F5;
+  --accent:#C96442;      /* terracotta */
+  --accent-ink:#8A3E24;
+  --serif:'Georgia','Palatino Linotype','Book Antiqua',serif;
+  --sans:-apple-system,'Segoe UI','Inter',sans-serif;
+  --mono:'SFMono-Regular',ui-monospace,'Cascadia Mono','Consolas',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;text-wrap:pretty}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+.serif{font-family:var(--serif)}
+
+/* ---------- hero ---------- */
+header{padding:64px 0 40px;border-bottom:1px solid var(--line)}
+.eyebrow{font:600 12px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--accent-ink)}
+h1{font-family:var(--serif);font-size:clamp(40px,6vw,68px);line-height:1.05;font-weight:500;letter-spacing:-.01em;margin:18px 0 16px}
+h1 em{font-style:italic;color:var(--accent)}
+.lede{max-width:620px;font-size:19px;color:var(--muted)}
+.hero-meta{display:flex;gap:28px;flex-wrap:wrap;margin-top:30px;font:500 13px/1.5 var(--sans)}
+.hero-meta b{color:var(--ink)}
+.hero-meta span{color:var(--muted)}
+
+/* ---------- section frame ---------- */
+section{padding:56px 0;border-bottom:1px solid var(--line)}
+h2{font-family:var(--serif);font-size:clamp(26px,3.4vw,36px);font-weight:500;margin-bottom:8px}
+.kicker{font:600 11px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--accent-ink);margin-bottom:10px}
+.sub{color:var(--muted);max-width:560px;margin-bottom:30px}
+
+/* ---------- circle ---------- */
+.circle{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:8px}
+.role{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 16px}
+.role .n{font-family:var(--serif);font-size:26px;color:var(--accent)}
+.role h3{font-size:15px;margin:4px 0 6px}
+.role p{font-size:12.5px;color:var(--muted);line-height:1.45}
+.role .gate{display:inline-block;margin-top:10px;font:600 10px/1 var(--sans);letter-spacing:.08em;color:var(--accent-ink);border:1px solid var(--line);border-radius:99px;padding:5px 8px;background:var(--bg)}
+.flowline{margin-top:18px;font:500 13px/1.6 var(--sans);color:var(--muted)}
+.flowline b{color:var(--ink)}
+
+/* ---------- feature blocks ---------- */
+.featgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.feat{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 22px 18px;text-decoration:none;color:var(--ink);transition:box-shadow .18s ease,transform .18s ease}
+.feat:hover{box-shadow:0 6px 24px -12px rgba(47,46,40,.25);transform:translateY(-2px)}
+.feat b{display:block;font-family:var(--serif);font-size:17.5px;font-weight:500;margin-bottom:7px}
+.feat span{display:block;font-size:13px;color:var(--muted);margin-bottom:12px}
+.feat i{display:block;font:600 10.5px/1 var(--mono);letter-spacing:.06em;color:var(--accent-ink);font-style:normal;border-top:1px dashed var(--line);padding-top:10px}
+.feat-a{background:var(--bg2)}
+
+/* ---------- core bento ---------- */
+.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px}
+.card h3{font-family:var(--serif);font-size:20px;font-weight:500;margin-bottom:8px}
+.card p{font-size:14px;color:var(--muted)}
+.c3{grid-column:span 3}.c4{grid-column:span 4}.c6{grid-column:span 6}.c8{grid-column:span 8}.c12{grid-column:span 12}
+.card .tag{display:block;font:600 10.5px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--accent-ink);margin-bottom:12px}
+code.k{font:600 12px var(--mono);background:var(--bg2);border-radius:6px;padding:2px 7px;color:var(--ink)}
+
+/* ---------- terminal proof ---------- */
+.term{background:#26241F;border-radius:14px;padding:22px 24px;color:#DAD5C8;font:12.5px/1.7 var(--mono);overflow-x:auto}
+.term .dim{color:#8B8677}
+.term .gr{color:#A4C29A}
+.term .rd{color:#D08A73}
+.term .ac{color:#E5A98F}
+.term .bar{display:flex;gap:8px;align-items:center;margin-bottom:14px;font-family:var(--sans);font-size:11px;color:#8B8677}
+.dot{width:9px;height:9px;border-radius:50%;background:#4C4A42}
+.dot.r{background:#B0624B}
+
+/* ---------- proof strip ---------- */
+.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:6px}
+.fact{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.fact .v{font-family:var(--serif);font-size:30px;font-weight:500}
+.fact .v sup{font-size:14px;color:var(--accent-ink)}
+.fact .l{font:500 12px/1.45 var(--sans);color:var(--muted);margin-top:4px}
+
+/* ---------- laws ---------- */
+.laws{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.law{border-top:2px solid var(--accent);background:var(--card);border-radius:0 0 12px 12px;padding:16px 18px}
+.law b{font:600 13px var(--sans)}
+.law span{display:block;font:12.5px/1.5 var(--sans);color:var(--muted);margin-top:4px}
+.law .adr{font:600 10px var(--mono);color:var(--accent-ink)}
+
+footer{padding:40px 0 60px;color:var(--muted);font-size:13px}
+footer b{color:var(--ink)}
+@media (max-width:900px){
+  .circle{grid-template-columns:repeat(2,1fr)}
+  .bento{grid-template-columns:repeat(6,1fr)}
+  .c3,.c4,.c8{grid-column:span 6}.c6{grid-column:span 6}
+  .strip{grid-template-columns:repeat(2,1fr)}
+  .laws{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">factory-kit · multi-agent code factory</div>
+    <h1>Agents can work?<br><em>Then make them prove it.</em></h1>
+    <p class="lede">Five agents build a feature from a task: research, plan, code, test. But “done” is never the agent’s word — the machine re-runs every gate itself, keeps the checkbook, and leaves a receipt of every step.</p>
+    <div class="hero-meta">
+      <span><b>5</b> roles · 1 circle</span>
+      <span><b>$2.14</b> combat circle</span>
+      <span><b>4</b> rounds of independent review</span>
+      <span><b>24/24</b> behavioral self-tests</span>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">the pipeline</div>
+    <h2>One circle = one feature</h2>
+    <p class="sub">Each role is a separate contract with its own model and allow-list of tools. Gates between roles belong to the human; changes live in a git-worktree sandbox — your working tree stays untouched.</p>
+    <div class="circle">
+      <div class="role"><span class="n">01</span><h3>Researcher</h3><p>reads the manifest, directories, ecosystem boundaries (Node/Python: pnpm, npm, uv, poetry) — writes the project passport</p><span class="gate">read-only</span></div>
+      <div class="role"><span class="n">02</span><h3>Planner</h3><p>plan from the task: files, steps, risks. Reads glossary, ADRs and the repo map FIRST</p><span class="gate">Y-gate</span></div>
+      <div class="role"><span class="n">03</span><h3>Developer</h3><p>implements strictly per the plan; edits only, git mutations denied globally</p><span class="gate">Y-gate</span></div>
+      <div class="role"><span class="n">04</span><h3>Tester</h3><p>report + PASS/FAIL verdict… then the machine verifies it itself ↓</p><span class="gate">Y-gate</span></div>
+      <div class="role"><span class="n">05</span><h3>Committer</h3><p>commit proposal + PR title/body ready — only the human merges</p><span class="gate">Y-gate</span></div>
+    </div>
+    <p class="flowline">Modes: <b>solo</b> (one-shot dev: idea → grill → ADR → task) · <b>enterprise</b> (BA upstream: HLD/stories → ready tasks, factory starts from the task). Rails: Ollama cloud (<code class="k">$</code> billing) or your company Copilot (18 premium/circle).</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">feature mechanics</div>
+    <h2>What runs under the hood of every feature</h2>
+    <p class="sub">Every block is working code with a law number or a combat test behind it — not promises.</p>
+    <div class="featgrid">
+      <a class="feat" href="#core">
+        <b>Live Y-gates</b><span>After every step the flow pauses: “read the plan? continue to developer?” Each human decision lands in the trace before exit — one event per fork, no duplicates.</span>
+        <i>gate: plan · diff · commit</i>
+      </a>
+      <a class="feat feat-a" href="#core">
+        <b>VERDICT VERIFICATION</b><span>Tester said “PASS”? The machine re-runs the passport gates (lint · typecheck · test · build) live, with green ✓ and timings. A lying verdict is demoted + honest stop.</span>
+        <i>law 1 · ST-22</i>
+      </a>
+      <a class="feat" href="#core">
+        <b>Targeted tests, not the world</b><span>Verification runs tests for the files the circle changed (vitest · pytest conventions). Full suite stays nightly: big repos stay fast while the project grows.</span>
+        <i>law · ST-25</i>
+      </a>
+      <a class="feat" href="#core">
+        <b>Tool wall</b><span>Every role gets its own allow-list: researcher sees Read only, developer gets pnpm gates. Git mutations are denied globally — no agent can commit, push or merge.</span>
+        <i>allowedTools · deny: git mutations</i>
+      </a>
+      <a class="feat feat-a" href="#core">
+        <b>Sandbox worktree</b><span>The whole circle lives in a git-worktree copy; your working tree stays clean. Cleanup after merge: one command, <code class="k">flow --cleanup</code>, Windows-proof.</span>
+        <i>work/&lt;circle&gt; · ADR-0007</i>
+      </a>
+      <a class="feat" href="#core">
+        <b>Budget circuit breaker</b><span>Before every hop (and before <code class="k">--fix</code>) the month-to-date spend is checked against your cap. Over budget: stop with a receipt of where the money went.</span>
+        <i>law 2 · ST-23</i>
+      </a>
+      <a class="feat" href="#core">
+        <b>Honest trace journal</b><span>Every circle writes events: decisions, spend, tokens, a single verified verdict, <code class="k">circle_end</code>. A failed circle leaves the same full receipt as a passing one.</span>
+        <i>law 4 · trace.jsonl</i>
+      </a>
+      <a class="feat feat-a" href="#core">
+        <b>Committer proposals</b><span>The factory never commits — it prepares: commit message, file list, PR title/body. After your “Y”: commit on the branch, artifacts copied, you push.</span>
+        <i>never push · PR-flow</i>
+      </a>
+      <a class="feat" href="#core">
+        <b>Drift checker</b><span>Contract and code must agree in both directions: a marker without mechanics is drift, mechanics without a marker is drift. It caught the factory itself on the first violation.</span>
+        <i>check-agents-md · v4.6</i>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">trust core</div>
+    <h2>What’s in the core: four iron laws</h2>
+    <p class="sub">The philosophy: an agent may say anything — a verdict is accepted only when a fact, not a claim, confirms it.</p>
+    <div class="bento">
+      <div class="card c8">
+        <span class="tag">core · law 1</span>
+        <h3>Machine-verified verdict</h3>
+        <p>The tester claims PASS — the engine re-runs the project passport itself (lint, typecheck, tests, build) and shows you ✓/✗ with timings, live. A disagreeing machine demotes the verdict and stops the circle honestly <em>with a trace receipt</em>. Proven in combat.</p>
+      </div>
+      <div class="card c4">
+        <span class="tag">core · law 2</span>
+        <h3>Cost, to the penny</h3>
+        <p>The budget cap is your choice (<code class="k">PIPELINE_BUDGET_USD</code> in .env). Unset = honest unlimited. Set = hard stop with the budget sheet before the most expensive hop — including <code class="k">--fix</code>.</p>
+      </div>
+      <div class="card c4">
+        <span class="tag">core · law 3</span>
+        <h3>Secrets travel only via env</h3>
+        <p>Keys are never printed, logged or embedded in prompts. No key = “missing secret” stop <em>before</em> the hop spawns — never a mid-circle 401 mystery. Copilot rail: auth lives in your company CLI login; the factory never asks for a key.</p>
+      </div>
+      <div class="card c4">
+        <span class="tag">core · law 4</span>
+        <h3>A fully honest journal</h3>
+        <p>Every circle writes events: Y/N gate decisions (one each, deduplicated), spend, tokens, the verdict (machine-confirmed, exactly once), <code class="k">circle_end</code>. A failed circle leaves the same full receipt as a passing one.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">evidence</div>
+    <h2>What it looks like from inside</h2>
+    <p class="sub">A real combat circle on a live project (24 Nov): after the tester’s verbal PASS, the engine showed its own re-verification.</p>
+    <div class="term">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot r"></span><span>VERDICT VERIFICATION — not the agent’s word, the machine</span></div>
+<pre>&gt; gym-app@0.1.0 lint      ✓ exit=0&nbsp;&nbsp;6s
+&gt; gym-app@0.1.0 typecheck  ✓ exit=0&nbsp;10s
+&gt; gym-app@0.1.0 test       ✓ 36 files · <span class="gr">294 passed (294)</span>&nbsp;36s
+&gt; gym-app@0.1.0 build      ✓ built in 2.2s
+
+<span class="dim">[circle cost]</span> <span class="ac">$2.14</span> · deepseek plan + glm dev/test · <span class="gr">PASS (verified)</span>
+<span class="dim">[trace]</span> gate:plan Y · gate:diff Y · verdict PASS · circle_end ✓</pre>
+    </div>
+    <div class="term" style="margin-top:14px">
+      <div class="bar"><span class="dot"></span><span class="dot r"></span><span>CHECKPOINTS — a death mid-circle is not a loss</span></div>
+<pre><span class="dim">$</span> node scripts/flow.mjs <span class="ac">--resume</span> onboarding-biometrics-experience-tier
+<span class="dim">&gt;&gt;</span> RESUME from <span class="ac">DEVELOPER</span> · plan already paid — <span class="gr">skipped</span>
+<span class="dim">&gt;&gt;</span> developer exit=0 · <span class="ac">$0.59</span> · artifact preserved
+<span class="dim">[trace]</span> circle_start from=developer · planner <span class="dim">not run</span> · gate:diff Y</pre>
+    </div>
+    <div class="term" style="margin-top:14px">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot r"></span><span>DOCTOR — first circle of the day, read-only, no models</span></div>
+<pre><span class="dim">$</span> node scripts/doctor.mjs
+<span class="ac">19 run(s)</span> · <span style="color:#ff6b6b">2 error(s)</span>, 0 warn(s), 2 info
+<span style="color:#ff6b6b">✗ hop failure</span>  2026-11-25T14-15-00 · onboarding-biometrics-experience-tier · role=developer · model=glm-5.3-flash · exit=1
+<span style="color:#ff6b6b">✗ hop failure</span>  2026-11-25T15-29-20 · progress-history-log-pr-badges-… · role=developer · exit=1
+<span class="dim">·</span> info: human stopped at the gate · 2 runs (plan Y · diff Y) — <span class="dim">a stop is not a bug</span>
+<span class="dim">[artifact]</span> .pipeline/diagnosis-report.md</pre>
+    </div>
+    <div class="term" style="margin-top:14px">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot r"></span><span>ADLC — every 5th circle, history → knowledge</span></div>
+<pre><span class="dim">$</span> node scripts/adlc.mjs
+<span class="ac">19 runs scanned</span> · 1 cluster · 1 knowledge gap
+<span style="color:#ffd166">KNOWLEDGE GAP:</span> gym-gate insight endpoint contract (path, payload,
+  response envelope) is still assumed, not documented
+  → docs/contracts/progress-insight.md <span class="dim">(empty home, flagged to top)</span>
+<span class="dim">class</span> developer|exit=1 <span class="ac">(x2)</span> 2026-11-25T14-15 + T15-29
+  <span class="dim">→ both closed by engine laws (turn-ceiling + checkpoints)</span>
+  <span class="gr">ST-suggest · developer|exit=1 — ok-verified, candidate earned</span>
+<span class="dim">[artifact]</span> .pipeline/adlc-issues.md</pre>
+    </div>
+    <div class="strip" style="margin-top:24px">
+      <div class="fact"><div class="v">294<sup>/294</sup></div><div class="l">tests in the live re-check, 24 Nov</div></div>
+      <div class="fact"><div class="v">$2.14</div><div class="l">full researcher→committer circle (was a $3–7 ceiling)</div></div>
+      <div class="fact"><div class="v">4<sup> rounds</sup></div><div class="l">adversarial review by another model before every push</div></div>
+      <div class="fact"><div class="v">4574</div><div class="l">tests passed in one NDA external-repo circle</div></div>
+      <div class="fact"><div class="v">$0.59</div><div class="l">a developer death mid-circle costs nothing: <b>checkpoints</b> — <i>flow --resume</i> continues on the preserved sandbox (was $3.15 to redo, twice)</div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">laws, filed as documents</div>
+    <h2>Every decision is an ADR with a date and an author</h2>
+    <p class="sub">The factory obeys the same protocol it demands from projects: decisions in ADR-0001…0008, the domain language in the glossary, a drift checker watching contract and code.</p>
+    <div class="laws">
+      <div class="law"><span class="adr">ADR-0002 / 0008</span><b>One default rail</b><span>the unwalled rail is deleted (config error); model resolution has one precedence, an ST guards it behaviorally</span></div>
+      <div class="law"><span class="adr">ADR-0004</span><b>A cap is a choice</b><span>unset = unlimited, set = stop with a receipt; no silent default numbers anywhere in the code</span></div>
+      <div class="law"><span class="adr">ADR-0006</span><b>The factory audits itself</b><span>engine moved → exhibits turn red; the day is NOT closed without the “AWAITING YOU” list</span></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <b>Sandbox lifecycle — the two manual layers (memorize these two commands):</b>
+    <div class="laws" style="margin-top:18px">
+      <div class="law"><b>1 · cleanup after merge</b><span>The sandbox must survive until the PR is merged (committer commits there). After the merge runs one command that removes the sandbox, prunes git state and deletes the merged branch safely:</span>
+      <span style="font-family:var(--mono);color:var(--accent-ink)">node scripts/flow.mjs --cleanup &lt;name&gt;</span></div>
+      <div class="law"><b>2 · work/ is invisible to tests</b><span>Test collection excludes <code>work/**</code> — leftover sandboxes can never poison a full test run (the 24.11 lesson: 259 ghost files, 287 phantom red). Even an accumulation mistake stays invisible.</span>
+      <span style="font-family:var(--mono);color:var(--accent-ink)">vitest.config: exclude work/**  ·  ST-26</span></div>
+    </div>
+    <br><br>
+    
+  
+<div class="law"><b>Hospital on live data · 25.11</b><span>ADLC после 19 прогонов: 1 failure-класс и <b>knowledge gap вскрыт ДО бага</b> — hops «предполагали» контракт insight-эндпоинта (документа не было) → геп наверх отчёта, дом <code>docs/contracts/progress-insight.md</code>. Два сгоревших developer-хопа = <b>один</b> класс <code>developer|exit=1</code> — уже закрыт законами (turn-ceiling + checkpoints) → кандидаты ST.</span>
+      <span style="font-family:var(--mono);color:var(--accent-ink)">adlc · 19 runs · 1 gap  ·  doctor · 0 warn · «stop» ≠ bug</span></div>
+    <b>Next:</b> doctor agent (self-diagnosis), AUTO-ADLC (trace clustering), Graphify (project map), tool-audit journal. First paid tier: done-for-you circles per accepted PASS, with honest-FAIL reports free as the lead magnet.
+    <br><br><span style="font-size:11px">factory-kit · every number on this page comes from real combat circles, 19–24 Nov 2026. Nothing invented.</span>
+  </div>
+</footer>
+
+</body>
+</html>

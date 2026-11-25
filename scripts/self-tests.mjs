@@ -12,6 +12,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const KIT = dirname(dirname(fileURLToPath(import.meta.url)));
+const AUTODIAG = await import(new URL(`file://${join(KIT, 'scripts', 'auto-diag.mjs').replace(/\\/g, '/')}`));
 const src = (p) => {
   const s = readFileSync(join(KIT, p), 'utf8').replace(/\r\n/g, '\n'); // CRLF-immune: win git autocrlf must not red the exhibits
   if (!s) throw new Error(`empty source: ${p}`);
@@ -603,10 +604,10 @@ await exhibit('ST-22', 'verdict verification: engine re-runs passport gates, red
   assert(s.includes('PIPELINE_VERIFY_GATES !== "0"'), 'opt-out must be logged, not silent');
   // safe: `fn` is extracted from the kit's OWN engine source (same trust
   // root as ST-1's new-Function slice pattern) - no external input reaches
-  // the body string.
-  const lawStart = s.indexOf('// ---- MACHINE-VERIFIED VERDICT LAW');
-  const lawEnd = s.indexOf('};', s.indexOf('const verifyVerdict', lawStart)) + 2;
-  const fn = s.slice(lawStart, lawEnd) + '};';
+    // the body string.
+  const lawStart = s.indexOf('const verifyVerdict');
+  const lawEnd = s.indexOf('\n};', lawStart) + 2; // includes the closing '};'
+  const fn = s.slice(lawStart, lawEnd);
   const mk = (testCmd, lintCmd) => {
     const d = mkdtempSync(join(tmpdir(), 'st22-'));
     mkdirSync2(join(d, 'docs'), { recursive: true });
@@ -681,8 +682,120 @@ await exhibit('ST-23', 'budget: cap unset=unlimited, ledger sums months, guard s
   delete process.env.PIPELINE_TRACE_BASE;
 });
 
-// ------------------------------------------------------------------
-// report: honest board style
+// ST-25 TARGETED-TEST LAW (master, 24.11): verdict re-run tests the changed
+// files, not the world. Pure exhibits: mapping + honest fallback.
+await exhibit('ST-25', 'targeted tests: changed src -> test paths, structural/fallback honest', async () => {
+  const ct = await import(pathToFileURL(join(KIT, 'scripts', 'changed-tests.mjs')).href);
+  const r1 = ct.mapToTests(['src/a/b.tsx', 'docs/x.md']);
+  assert(r1.tests.includes('src/a/b.test.tsx'), 'vitest convention mapped');
+  assert(r1.tests.includes('src/a/__tests__/b.test.tsx'), '__tests__ sibling mapped');
+  const r2 = ct.mapToTests(['tests/test_b.py'].concat(['src/b.py']));
+  assert(r2.tests.includes('tests/test_b.py'), 'changed pytest file included directly');
+  const g1 = ct.targetedGate({ 'test-targeted': 'npx vitest run $FILES' }, r1.tests, false);
+  assert(g1 && g1.includes('"src/a/b.test.tsx"') && g1.startsWith('npx vitest run'), 'targeted cmd built with $FILES');
+  assert(ct.targetedGate({ test: 'pnpm test' }, r1.tests, false) === null, 'no template -> honest full-gate fallback');
+  assert(ct.targetedGate({ 'test-targeted': 'npx vitest run $FILES' }, [], false) === null, 'no changes -> no targeted cmd');
+  assert(ct.mapToTests(['pnpm-lock.yaml']).structural === true, 'lockfile = structural (full gate wins)');
+});
+
+// ST-27 AUTO-ADLC (queue #2): trace → issues loop — clustering, knowledge
+// gaps FIRST, closed-failure auto-exhibit candidates. CLI behavior only.
+await exhibit('ST-27', 'adlc: clusters failures, surfaces knowledge gaps, proposes exhibit for the closed class', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'st27-'));
+  const tb = join(d, 'tb');
+  const mkr = (rid, body) => {
+    const p = join(d, 'tb', '.pipeline', 'runs', rid); // lives in the TRACE base (round-10 §6 fixture)
+    mkdirSync2(p, { recursive: true });
+    wf(join(p, 'trace.jsonl'), body);
+  };
+  mkr('2026-11-24T10-00-00__run-a', '{"event":"hop_end","role":"developer","exit":1,"note":"timeout"}\n{"event":"circle_end","verdict":"FAIL"}\n');
+  mkr('2026-11-24T11-00-00__run-b', '{"event":"knowledge_gap","role":"planner","what":"tests mapping unknown"}\n{"event":"circle_end","verdict":"PASS"}\n');
+  mkr('2026-11-25T09-00-00__run-c', '{"event":"hop_end","role":"developer","exit":0}\n{"event":"circle_end","verdict":"PASS"}\n'); // real shape: passing hops carry no note (round-8 review R7-9)
+  const ss = (await import('node:child_process')).spawnSync;
+  const r = ss(process.execPath, [join(KIT, 'scripts', 'adlc.mjs')], { cwd: d, stdio: 'pipe', timeout: 30000, env: { ...process.env, PIPELINE_TRACE_BASE: tb } });
+  const md = readFileSync(join(tb, '.pipeline', 'adlc-issues.md'), 'utf8');
+  assert(r.status === 0, `adlc exits 0, got ${r.status}`);
+  assert(md.includes('## Knowledge gaps') && md.includes('tests mapping unknown'), 'knowledge gaps surface FIRST (board 21.11)');
+  assert(md.includes('developer|exit=1|timeout'), 'failure clustered on REAL event fields (role|exit+note, round-7 A1)');
+  assert(md.includes('ST-suggest'), 'closed class -> auto-exhibit candidate (later run exercised the role, A3)');
+  // round-10 §6: with PIPELINE_TRACE_BASE != cwd the report lands in the TRACE base
+  mkdirSync2(tb, { recursive: true });
+  const r2 = ss(process.execPath, [join(KIT, 'scripts', 'adlc.mjs'), '--json'], { cwd: d, stdio: 'pipe', timeout: 30000, env: { ...process.env, PIPELINE_TRACE_BASE: tb } });
+  assert(ex(join(tb, '.pipeline', 'adlc-issues.md')), 'adlc writes into the TRACE base, not cwd (one-base invariant)');
+  const j = JSON.parse(r2.stdout.toString());
+  assert(j.clusters.length === 1 && j.gaps.length === 1 && j.closed.length === 1, `--json findings honest: ${JSON.stringify(j)}`);
+  assert(j.clusters[0].includes('timeout') && j.closed[0].includes('timeout'), '--json carries signatures, not only counts (A7)');
+});
+// ST-26 DOCTOR AGENT (board item №1, phase 4): read-only diagnosis from
+// traces + stale sandbox + drift pointer; ONE artifact, no models, no fixes.
+await exhibit('ST-26', 'doctor: hop failures, N-gate, merged/stale sandbox split, single report, --fail-on-error', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'st26-'));
+  const runs = join(d, '.pipeline', 'runs', '2026-11-25T08-00-00__map-x');
+  mkdirSync2(join(d, 'work', 'eval-stale'), { recursive: true });
+  mkdirSync2(runs, { recursive: true });
+  wf(join(runs, 'trace.jsonl'),
+    '{"event":"hop_end","role":"developer","model":"glm","exit":1,"duration_ms":91000}\n' +
+    '{"event":"hop_failed","role":"developer","exit":1}\n' + // D2: duplicate source - must NOT double-report
+    '{"event":"gate","gate":"plan","result":"N"}\n' +
+    'not-json-on-purpose\n');
+  // real git repo so the merged/unmerged staleness check is honest
+  const ss = (await import('node:child_process')).spawnSync;
+  const gi = (a) => ss('git', a, { cwd: d, stdio: 'pipe' });
+  gi(['init', '-b', 'develop']); gi(['config', 'user.email', 't@t']); gi(['config', 'user.name', 't']);
+  wf(join(d, 'f.txt'), 'x'); gi(['add', '.']); gi(['commit', '-q', '-m', 'init']);
+  gi(['branch', 'feat/eval-stale']); // branch == develop HEAD: the "merged sandbox" case
+  const r = ss(process.execPath, [join(KIT, 'scripts', 'doctor.mjs')], { cwd: d, stdio: 'pipe', timeout: 30000 });
+  const out = r.stdout.toString();
+  assert(r.status === 0, `doctor exits honestly, got ${r.status}: ${r.stderr?.toString()}`);
+  const failCount = (out.match(/hop failure/g) || []).length;
+  assert(failCount === 1, `hop failure counted ONCE (D2 dedupe), got ${failCount}`);
+  assert(out.includes('plan'), 'human N-gate recorded as info');
+  assert(out.includes('eval-stale') && out.includes('--cleanup eval-stale'), 'merged-or-stale sandbox hinted at --cleanup');
+  assert(out.includes('corrupted'), 'corrupted-line tolerance reports, does not drop the run');
+  assert(ex(join(d, '.pipeline', 'diagnosis-report.md')), 'ONE artifact: diagnosis-report.md written');
+  // CI contract: --fail-on-error exits 1 with an error present
+  const r2 = ss(process.execPath, [join(KIT, 'scripts', 'doctor.mjs'), '--fail-on-error'], { cwd: d, stdio: 'pipe', timeout: 30000 });
+  assert(r2.status === 1, `--fail-on-error must exit 1 over an error, got ${r2.status}`);
+  // and the empty path stays honest-quiet
+  const d2 = mkdtempSync(join(tmpdir(), 'st26-'));
+  const r3 = ss(process.execPath, [join(KIT, 'scripts', 'doctor.mjs')], { cwd: d2, stdio: 'pipe', timeout: 30000 });
+  assert(r3.status === 0 && r3.stdout.toString().includes('nothing abnormal'), 'no runs = honest quiet, exit 0');
+  // round-9 §1: the exact case the round-8 ReferenceError broke — --fail-on-error on a CLEAN dir exits 0
+  const r4 = ss(process.execPath, [join(KIT, 'scripts', 'doctor.mjs'), '--fail-on-error'], { cwd: d2, stdio: 'pipe', timeout: 30000 });
+  assert(r4.status === 0, `--fail-on-error on clean dir exits 0 (round-8 bug guard), got ${r4.status}`);
+});
+
+// ST-28 HOSPITAL AUTOMATION (master, 25.11): doctor due once/date-limited,
+// adlc due on every 5th circle. Pure-function exhibits.
+await exhibit('ST-28', 'auto-diag: doctor due-when-unstamped, adlc due on %5, stamp works', async () => {
+    // uses the AUTODIAG module (imported at the file top)
+  const d = mkdtempSync(join(tmpdir(), 'st28-'));
+  const marker = join(d, '.doctor-last');
+  assert(AUTODIAG.doctorDue(marker, '2026-11-25'), 'no stamp -> doctor due');
+  AUTODIAG.stampDoctor(marker, '2026-11-25');
+  assert(!AUTODIAG.doctorDue(marker, '2026-11-25'), 'same-day stamp -> not due');
+  assert(AUTODIAG.doctorDue(marker, '2026-11-26'), 'new day -> due again');
+  assert(!AUTODIAG.adlcDue(0) && !AUTODIAG.adlcDue(4), 'under 5 circles -> not due');
+  assert(AUTODIAG.adlcDue(5) && !AUTODIAG.adlcDue(7), 'due on exactly the 5th, not between');
+  assert(AUTODIAG.adlcDue(10) && !AUTODIAG.adlcDue(12), 'every 5th, adlcDue(5 * n) only');
+  // behavioral: maybeRunAutoDiag spawn paths (round-10 §9 fix) — REAL root, real broken base
+  const savedBase = process.env.PIPELINE_TRACE_BASE;
+  delete process.env.PIPELINE_TRACE_BASE;
+  const w = mkdtempSync(join(tmpdir(), 'st28w-'));
+  // (a) CLEAN: root = KIT -> the REAL scripts/doctor.mjs resolves -> success stamp
+  const line1 = AUTODIAG.maybeRunAutoDiag({ root: KIT, phase: 'pre' });
+  const markerKit = join(KIT, '.pipeline', '.doctor-last');
+  assert(ex(markerKit) && readFileSync(markerKit, 'utf8').trim() === AUTODIAG.todayStamp(), `clean doctor stamps today (line: ${line1})`);
+  const line2 = AUTODIAG.maybeRunAutoDiag({ root: KIT, phase: 'pre' });
+  assert(line2 === '', 'same-day stamp -> doctor not re-spawned');
+  // (b) BROKEN: PIPELINE_TRACE_BASE = an ACTUAL FILE -> readdirSync ENOTDIR -> doctor exit 1
+  const trap = join(w, 'tbfile');
+  wf(trap, 'x');
+  process.env.PIPELINE_TRACE_BASE = trap;
+  const line3 = AUTODIAG.maybeRunAutoDiag({ root: KIT, phase: 'pre' });
+  assert(line3.includes('FAILED') && line3.includes('exit=1'), `broken base surfaces FAILED + exit: ${line3}`);
+  process.env.PIPELINE_TRACE_BASE = savedBase;
+}); 
 // ------------------------------------------------------------------
 const green = results.filter((r) => r.ok);
 const red = results.filter((r) => !r.ok && !r.pending && !r.skip);
@@ -703,3 +816,4 @@ if (red.length) {
   console.log(' DRIFT against the laws - engine code moved, exhibits caught it.');
   process.exit(1);
 }
+
