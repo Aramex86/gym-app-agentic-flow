@@ -23,6 +23,7 @@ import { spawnSync } from "node:child_process";
 import { join, resolve, isAbsolute, basename as pathBasename } from "node:path";
 import readline from "node:readline/promises";
 import * as trace from "./trace.mjs";
+import { stdin as input, stdout as output } from "node:process";
 import { getProfile } from "./profile.mjs";
 import { loadEnv } from "./env.mjs";
 import { guard as budgetGuard } from "./budget.mjs";
@@ -487,6 +488,67 @@ if (arg1 === "--fix" || arg1 === "-fix") {
   process.exit(0);
 }
 
+// ---------- RESUME — CHECKPOINTS (queue item #4; born 25.11 combat, 2 burns) ----------
+// A circle died mid-way (max-turns, provider blip)? The sandbox with the
+// already-paid plan is preserved: --resume <name> [stage] skips researcher/
+// planner entirely and continues from developer / tester / verdict+committer.
+if (arg1 === "--resume" || arg1 === "-resume") {
+  const rname = process.argv[process.argv.indexOf("--resume") + 1];
+  const stage = (process.argv[process.argv.indexOf("--resume") + 2] || "developer").toLowerCase();
+  if (!rname)
+    exit(3, "usage: node scripts/flow.mjs --resume <sandbox-name> [developer|tester|verdict]");
+  const rwt = join(process.cwd(), "work", rname);
+  if (!existsSync(rwt))
+    exit(3, `resume: no sandbox work/${rname} — nothing to continue.`);
+  if (!existsSync(join(rwt, "docs", "plans", rname + "-plan.md")))
+    exit(3, `resume: no plan in that sandbox (died before the planner) — nothing to resume.`);
+  const rid2 = trace.newRun("resume-" + rname);
+  trace.ev(rid2, { event: "circle_start", task: "resume:" + rname, name: rname, from: stage });
+  clog("resume", `\n===> RESUME: ${rname} from ${stage.toUpperCase()} (planner already paid — skipped)`);
+  if (stage === "developer") {
+    clog("developer", "\n===> DEVELOPER");
+    if (hop(["developer", "-i", join("docs", "plans", rname + "-plan.md"), "implement the plan from the input file"], rwt, rid2) !== 0)
+      exit(1, "developer hop failed");
+    console.log("\n>> working tree after developer (sandbox):");
+    spawnSync("git", ["status", "--short"], { stdio: "inherit", cwd: rwt });
+    spawnSync("git", ["diff", "--stat"], { stdio: "inherit", cwd: rwt });
+    const dg = await ask("Continue to tester? (Y/N): ");
+    trace.ev(rid2, { event: "gate", gate: "diff", result: isY(dg) ? "Y" : "N" });
+    if (!isY(dg)) exit(0, "flow stopped before tester (sandbox preserved)");
+  } else {
+    trace.ev(rid2, { event: "gate", gate: "diff", result: "Y" });
+  }
+  if (stage !== "verdict") {
+    clog("tester", "\n===> TESTER");
+    if (hop(["tester", "-i", join("docs", "plans", rname + "-plan.md")], rwt, rid2) !== 0) exit(1, "tester hop failed");
+  }
+  console.log("\x1b[32m\n===> VERDICT\x1b[0m");
+  console.log(readFileSync(join(rwt, "docs", "plans", rname + "-report.md"), "utf8").split("\n").slice(0, 3).join("\n"));
+  if (process.env.PIPELINE_VERIFY_GATES !== "0") {
+    clog("tester", "\n===> VERDICT VERIFICATION (machine re-runs the gates)");
+    const v = verifyVerdict(rwt, rid2);
+    for (const r of v.results)
+      clog("tester", `  ${r.exit === 0 ? "✓" : "✗"} ${r.gate} (${r.cmd}) exit=${r.exit} ${Math.round(r.duration_ms / 1000)}s`);
+    if (v.empty) {
+      trace.ev(rid2, { event: "verdict_verification_skipped", reason: "no known gates in passport" });
+      clog("tester", "  (passport exposes no known gates - claim accepted, logged in trace)");
+    } else if (!v.ok) {
+      trace.ev(rid2, { event: "verdict", result: "FAIL", reason: "verdict_verification_failed", gate: v.failed.gate });
+      trace.ev(rid2, { event: "circle_end", task: "resume:" + rname, name: rname, verdict: "FAIL" });
+      exit(1, `\nVERDICT VERIFICATION FAILED: ${v.failed.gate} exit=${v.failed.exit} - honest stop.`);
+    } else trace.ev(rid2, { event: "verdict", result: "PASS", verified: true, gates: v.results.length });
+  } else {
+    trace.ev(rid2, { event: "verdict_verification_skipped", reason: "PIPELINE_VERIFY_GATES=0" });
+    trace.ev(rid2, { event: "verdict", result: "PASS", verified: false });
+    clog("tester", "  (PIPELINE_VERIFY_GATES=0 - verdict accepted unverified, logged in trace)");
+  }
+  await committerStep(rname, "docs/plans/" + rname + "-report.md", rwt, rid2);
+  trace.ev(rid2, { event: "circle_end", task: "resume:" + rname, name: rname, verdict: "PASS" });
+  maybeRunAutoDiag({ root: process.cwd(), phase: "post" });
+  console.log(`\nresumed circle complete: work/${rname}`);
+  process.exit(0);
+}
+
 console.log("\x1b[32m===> FLOW\x1b[0m");
 console.log(
   "SANDBOX MODE: hops run in their own git worktree copy; your main tree stays clean.",
@@ -649,7 +711,7 @@ console.log("PASS.");
 // A tester verdict is a MODEL CLAIM. The engine re-runs the passport's
 // gates (lint/typecheck/test, those that are known) and accepts the PASS
 // only if every re-run is green. Failures = honest stop, verdict demoted.
-const verifyVerdict = (wt, rid) => {
+function verifyVerdict(wt, rid) {
   const P = getProfile(wt, undefined);
   const gates = ["lint", "typecheck", "test", "build"].filter(
     (g) => P[g] && P[g] !== "unknown" && String(P[g]).length < 400,
@@ -727,7 +789,7 @@ const verifyVerdict = (wt, rid) => {
   }
   const failed = results.find((r) => r.exit !== 0);
   return { ok: !failed && results.length > 0, results, failed, gateCount: gates.length, empty: gates.length === 0 };
-};
+}
 if (process.env.PIPELINE_VERIFY_GATES !== "0") {
   clog("tester", "\n===> VERDICT VERIFICATION (machine re-runs the gates)");
   const v = verifyVerdict(wt, rid);
