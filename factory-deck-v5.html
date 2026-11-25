@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Honest Machine v5 — deck (25 Nov)</title>
+<style>
+:root{--bg:#F5F1EA;--bg2:#EDE7DC;--ink:#2F2E28;--muted:#6B675C;--line:#DED6C8;--card:#FBF9F5;--ac:#C96442;--ac2:#8A3E24;--ok:#5A7A5E;--serif:Georgia,'Palatino Linotype',serif;--sans:-apple-system,'Segoe UI',sans-serif;--mono:'Cascadia Mono',Consolas,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#241F1B;color:var(--ink);font-family:var(--sans);display:flex;align-items:center;justify-content:center;min-height:100vh}
+#stage{width:1280px;height:720px;background:var(--bg);box-shadow:0 20px 80px rgba(0,0,0,.5);position:relative;overflow:hidden}
+.slide{position:absolute;inset:0;padding:56px 64px;display:none}
+.slide.active{display:block}
+.k{font:600 11px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--ac2)}
+h1{font-family:var(--serif);font-size:56px;line-height:1.08;font-weight:500;margin:14px 0}
+h1 em{font-style:italic;color:var(--ac)}
+h2{font-family:var(--serif);font-size:34px;font-weight:500;margin:10px 0 18px}
+p.lede{font-size:18px;color:var(--muted);max-width:900px}
+.grid{display:grid;gap:16px;margin-top:26px}
+.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:repeat(2,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.box b{font-family:var(--serif);font-size:17px;font-weight:500;display:block;margin-bottom:6px}
+.box span{font-size:13px;color:var(--muted);line-height:1.5}
+.box i{display:block;margin-top:10px;font:600 10px/1 var(--mono);color:var(--ac2);font-style:normal;border-top:1px dashed var(--line);padding-top:8px}
+.term{background:#26241F;color:#DAD5C8;font:13px/1.7 var(--mono);border-radius:12px;padding:20px 24px;white-space:pre-wrap}
+.term .g{color:#A4C29A}.term .o{color:#E5A98F}.term .d{color:#8B8677}
+.stat{font-family:var(--serif);font-size:40px}
+.stat small{font-size:15px;color:var(--ac2)}
+.nav{position:absolute;right:24px;bottom:20px;font:600 12px var(--sans);color:var(--muted)}
+.dots{position:absolute;left:64px;bottom:20px;font:600 12px var(--sans);color:var(--muted);letter-spacing:.2em}
+.arrow{font-size:22px;color:var(--ac)}
+.foot{position:absolute;bottom:44px;left:64px;right:64px;font:12px var(--sans);color:var(--muted)}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.slide.active .box,.slide.active .term{animation:fade .35s ease both}
+@media print{body{background:#fff}#stage{box-shadow:none}}
+</style>
+</head>
+<body>
+<div id="stage">
+
+<section class="slide active">
+  <div class="k">factory-kit v5 · honest machine</div>
+  <h1>Agents can work?<br><em>Then make them prove it.</em></h1>
+  <p class="lede">Five agents build a feature from a task. “Done” is never the agent’s word — the machine re-runs every gate itself, keeps the checkbook, walks itself to the doctor, and leaves a receipt of every step.</p>
+  <div class="grid g4">
+    <div class="box"><span class="stat">$2.14 <small>combat circle</small></span><span>A full researcher→committer circle on gym-app, 24 Nov. Was a $3–7 ceiling.</span></div>
+    <div class="box"><span class="stat">294/294</span><span>tests re-run by the machine after the tester claimed PASS — all verified.</span></div>
+    <div class="box"><span class="stat">8 PRs</span><span>merged in 48h through PR-flow: branch → PR → your review → merge. Human-only merges.</span></div>
+    <div class="box"><span class="stat">28/28</span><span>behavioral self-tests guard the laws. Engine moved → exhibits turn red.</span></div>
+  </div>
+  <div class="dots">● 1 / 6</div><div class="nav">← →</div>
+</section>
+
+<section class="slide">
+  <div class="k">the pipeline</div>
+  <h2>One circle = one feature</h2>
+  <div class="term">
+> tasks\<span class="o">2026-11-24-map-refresh.md</span>
+→ <span class="d">[Researcher]</span> passport: pm, lockfile, gates, tool grammar → <span class="g">docs/factory-profile.md</span>
+→ <span class="d">[Planner]</span>    reads glossary + ADRs + repo map FIRST → plan <span class="d">→ Y-gate ↓</span>
+→ <span class="d">[Developer]</span> implements; git mutations denied globally <span class="d">→ Y-gate ↓</span>
+→ <span class="d">[Tester]</span>    report + verdict… then the machine checks it itself:
+   <span class="g">✓ lint 6s · ✓ typecheck 10s · ✓ test 36s (294) · ✓ build 6s</span>
+→ <span class="d">[Committer]</span> commit proposal + PR title/body — <span class="o">only the human merges</span>
+  </div>
+  <div class="grid g4">
+    <div class="box"><b>Checkpoints</b><span>A death mid-circle is not a loss: sandbox + paid plan preserved, <i>--resume <name></i> continues free. Born from combat: $0.59 vs $3.15 redo.</span><i>flow --resume · 25.11 law</i></div>
+    <div class="box"><b>Tool wall</b><span>Per-role allow-lists. Git mutations denied to every role.</span><i>ADR-0002</i></div>
+    <div class="box"><b>Sandbox worktree</b><span>Circle lives in work/…; main tree stays clean. One-command cleanup.</span><i>flow --cleanup</i></div>
+    <div class="box"><b>PR-flow</b><span>Branch → PR → review → merge. Agents never push.</span><i>8/8 merged</i></div>
+  </div>
+  <div class="dots">● 2 / 6</div><div class="nav">← →</div>
+</section>
+
+<section class="slide">
+  <div class="k">trust core</div>
+  <h2>The four iron laws</h2>
+  <div class="grid g2">
+    <div class="box"><b>1 · Machine-verified verdict</b><span>“PASS” accepted only if the engine’s own re-run is green — targeted tests over the changed files, stderr visible. A lying verdict is demoted with a trace receipt.</span><i>ST-22/25 · combat-proven 24.11</i></div>
+    <div class="box"><b>2 · Cost, to the penny</b><span>Cap is your choice (env). Unset = honest unlimited. Set = hard stop with the budget sheet — before the most expensive hop, including --fix.</span><i>ADR-0004 · ST-23</i></div>
+    <div class="box"><b>3 · Secrets only via env</b><span>Never printed, logged or prompted. No key = “missing secret” stop before spawn. Copilot rail: your company login is the auth; no key asked.</span><i>ADR-0007</i></div>
+    <div class="box"><b>4 · A fully honest journal</b><span>Gate decisions, spend, a single verified verdict, circle_end — even FAIL circles leave a full receipt.</span><i>trace.jsonl · dedup-checked</i></div>
+  </div>
+  <p class="lede" style="margin-top:18px">Everything filed as ADR-0001…0008; a drift checker enforces contract ↔ code both directions — it caught the factory itself first.</p>
+  <div class="dots">● 3 / 6</div><div class="nav">← →</div>
+</section>
+
+<section class="slide">
+  <div class="k">hospital · new 25.11</div>
+  <h2>The factory walks itself to the doctor</h2>
+  <div class="grid g2">
+    <div class="box"><b>Doctor — first circle of the day</b><span>Read-only exam of the current state: hop failures, contradicted verdicts, cost-blind hops, stale sandboxes, contract drift. One artifact, no models, CI exit contract.</span><i>doctor.mjs · --fail-on-error · ST-26</i></div>
+    <div class="box"><b>ADLC — every 5th circle</b><span>History → knowledge: failure classes by real event shapes, knowledge-gap lines from hops surfaced FIRST, closed classes earn ST-exhibit suggestions — proposed, never auto-written.</span><i>adlc.mjs · ST-27</i></div>
+  </div>
+  <div class="term">
+<span class="d">$ node scripts/flow.mjs tasks\new-feature.md</span>
+<span class="o">[auto-diag]</span> doctor · 11 runs · 0 errors, 0 warns   <span class="d">← walks in automatically</span>
+…
+<span class="o">[auto-diag]</span> adlc · 19 runs · 1 cluster · 1 knowledge gap   <span class="d">← every 5th circle</span>
+  </div>
+  <div class="box" style="margin-top:12px"><b>Caught in the wild · 25.11</b><span>ADLC (19 runs) surfaced <b>1 knowledge gap BEFORE it became a bug</b> — hops were <i>assuming</i> the insight-endpoint contract; gap flagged to the top, pointed at its empty home <i>docs/contracts/progress-insight.md</i>. Two burned developer hops correctly clustered as <b>one</b> class — already closed by engine laws (turn-ceiling + checkpoints). Doctor (same day): 0 warns, «human stopped at gate» is honest, not a bug.</span><i>adlc · 1 gap · doctor · 0 warn · 25.11 15:5x</i></div>
+  <p class="lede" style="margin-top:12px">Zero commands, zero tokens (read-only, no models). Opt-out: PIPELINE_AUTO_DIAG=0. Findings become task-card hints — repairs happen through normal circles.</p>
+  <div class="dots">● 4 / 6</div><div class="nav">← →</div>
+</section>
+
+<section class="slide">
+  <div class="k">review discipline</div>
+  <h2>Six rounds of adversarial review — the machine audits itself</h2>
+  <div class="grid g3">
+    <div class="box"><b>Rounds 1–4</b><span>Trust core built: tool wall, verdict verification, budget breaker, secrets, imports. 10+ findings closed.</span><i>docs/design/ …round1-4</i></div>
+    <div class="box"><b>Rounds 5–7 (new code)</b><span>Doctor + targeted tests reviewed — caught the law silently never firing (uncommitted diff) and phantom clustering on non-existent event fields. Rewired to REAL shapes.</span><i>…doctor-round · adlc-round</i></div>
+    <div class="box"><b>Round 8 (live)</b><span>Caught own regression: --fail-on-error crashed; the gap writer read a JSON path the default flow never produced; import kills. All rewired; green by honest paths now.</span><i>…round8</i></div>
+  </div>
+  <p class="lede" style="margin-top:18px">Standing practice: every major engine change goes through an adversarial review round by another model BEFORE push. The exhibits red on the intended shape only once the emitted shape is proven — each round names that gap and kills it.</p>
+  <div class="dots">● 5 / 6</div><div class="nav">← →</div>
+</section>
+
+<section class="slide">
+  <div class="k">what’s next · first paying tier</div>
+  <h2>The queue and the offer</h2>
+  <div class="grid g3">
+    <div class="box"><b>Queue (phase 4)</b><span>2.6 Context Hygiene (offload gate, window telemetry) → 2.7 Graphify (project map) → 2.8 Tool-audit journal → design skins.</span><i>board sorted 25.11</i></div>
+    <div class="box"><b>Offer A — done-for-you</b><span>Circles per accepted PASS ($250–500), retainer $1.5–3k/w. Passport = free lead magnet; honest-FAIL = free (COGS $3–7).</span><i>GTM · positioning leg</i></div>
+    <div class="box"><b>Offer B — self-host</b><span>Seats $299/mo second (trust core is the prerequisite — now closed). Client artifact bundle: passport + verdict report + trace digest.</span><i>heartbeat/DRM at 3+ seats</i></div>
+  </div>
+  <div class="foot">every number on these slides is from real combat circles, 19–25 Nov 2026 — nothing invented · factory-kit, branch develop, 28/28 exhibits</div>
+  <div class="dots">● 6 / 6</div><div class="nav">← →</div>
+</section>
+
+</div>
+<script>
+const S=[...document.querySelectorAll('.slide')];let i=0;
+const show=n=>{i=(n+S.length)%S.length;S.forEach((s,k)=>s.classList.toggle('active',k===i));};
+addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' '].includes(e.key))show(i+1);if(['ArrowLeft','PageUp'].includes(e.key))show(i-1);});
+addEventListener('click',()=>show(i+1));
+const fit=()=>{const s=document.getElementById('stage');const k=Math.min(innerWidth/1280,innerHeight/720);s.style.transform=`scale(${k})`;};
+addEventListener('resize',fit);fit();show(0);
+</script>
+</body>
+</html>
