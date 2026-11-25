@@ -20,8 +20,9 @@ export interface ChoiceChipGroupProps<Id extends string> {
   legend: string;
   /** Ordered options to render. */
   options: readonly ChoiceChipOption<Id>[];
-  /** Currently selected id; exactly one chip is pressed. */
-  value: Id;
+  /** Currently selected id; exactly one chip is pressed. `null` = nothing
+   *  selected (required-but-unanswered group: zero chips pressed). */
+  value: Id | null;
   /** Called only when a different chip is activated. */
   onChange: (id: Id) => void;
 }
@@ -52,7 +53,10 @@ const chipsStyle = {
  * @param props Legend, ordered options, selected id and change callback.
  * @returns Single-select chip group.
  * @remarks Do not use for multi-select (zero or many on) — use ToggleChip
- *   directly as GoalSelect does; here the selection is never empty.
+ *   directly as GoalSelect does. Selection is exactly one chip, except
+ *   `value: null` (required-but-unanswered group): all chips render unpressed
+ *   until the first pick; then the single-select invariant holds. Clicking the
+ *   pressed chip never clears a non-null selection.
  */
 export function ChoiceChipGroup<Id extends string>({
   legend,
@@ -69,7 +73,8 @@ export function ChoiceChipGroup<Id extends string>({
             key={option.id}
             on={option.id === value}
             // WHY: activating the pressed chip must not clear the selection —
-            // fields backed by this group are skippable-with-default, never empty.
+            // clearing (to null) is an owner-level reset via props, not a
+            // group-level click effect.
             onToggle={() => {
               if (option.id !== value) {
                 onChange(option.id);

@@ -9,7 +9,7 @@ import type { PlanWeek } from "@shared/config/plan.schema";
 import { getActiveProfile } from "@entities/profile";
 import type { LifestyleProfile } from "@entities/profile";
 import { ORTHOPEDIC_LIMITATION_IDS } from "@entities/profile";
-import type { OrthopedicSelection, TrainingGoalId } from "../types";
+import type { GenerateProfilePatch, OrthopedicSelection, TrainingGoalId } from "../types";
 import { TRAINING_GOAL_IDS } from "../types";
 import { buildGeneratePlanRequest, filterPlanWeeksByExerciseName } from "../slice";
 
@@ -302,5 +302,107 @@ describe("entities/training-plan buildGeneratePlanRequest", () => {
     expect(request.profile.caution).toBe("gentle wrist loading");
     expect(request.caution).toBe("gentle wrist loading");
     expect(request.goals).toEqual(["strength", "mobility"]);
+  });
+});
+
+describe("entities/training-plan buildGeneratePlanRequest — onboarding patch", () => {
+  it("merges biometrics + experienceTier into request.profile; base profile not mutated", () => {
+    const profile = getActiveProfile();
+    const patch: GenerateProfilePatch = {
+      biometrics: { ageYears: 30, heightCm: 178, weightKg: 75.5 },
+      experienceTier: "advanced",
+    };
+
+    const request = buildGeneratePlanRequest(
+      profile,
+      ["strength"],
+      ["smart-watch"],
+      undefined,
+      undefined,
+      patch,
+    );
+
+    expect(request.profile).not.toBe(profile);
+    expect(request.profile.biometrics).toEqual({ ageYears: 30, heightCm: 178, weightKg: 75.5 });
+    expect(request.profile.experienceTier).toBe("advanced");
+    expect(profile.biometrics).toBeNull();
+    expect(profile.experienceTier).toBeNull();
+  });
+
+  it("explicit null patch values clear the fields in the payload (guard is !== undefined)", () => {
+    const profile = {
+      ...getActiveProfile(),
+      biometrics: { ageYears: 30, heightCm: 178, weightKg: 75 } as const,
+      experienceTier: "novice" as const,
+    };
+    const request = buildGeneratePlanRequest(
+      profile,
+      ["strength"],
+      ["smart-watch"],
+      undefined,
+      undefined,
+      { biometrics: null, experienceTier: null },
+    );
+
+    expect(request.profile.biometrics).toBeNull();
+    expect(request.profile.experienceTier).toBeNull();
+    // The explicit nulls survive JSON serialization (never dropped keys).
+    expect(JSON.parse(JSON.stringify(request.profile))).toHaveProperty("biometrics", null);
+    expect(JSON.parse(JSON.stringify(request.profile))).toHaveProperty("experienceTier", null);
+    // Base profile not mutated.
+    expect(profile.biometrics).not.toBeNull();
+  });
+
+  it("no patch (undefined) keeps the original profile reference exactly as today", () => {
+    const profile = getActiveProfile();
+    const request = buildGeneratePlanRequest(profile, ["strength"], ["smart-watch"]);
+    expect(request.profile).toBe(profile);
+  });
+
+  it("one-key patches only touch their own key; the other keeps the profile value", () => {
+    const profile = {
+      ...getActiveProfile(),
+      biometrics: { ageYears: 22, heightCm: 165, weightKg: 55 } as const,
+      experienceTier: "novice" as const,
+    };
+    const request = buildGeneratePlanRequest(
+      profile,
+      ["strength"],
+      ["smart-watch"],
+      undefined,
+      undefined,
+      { biometrics: undefined, experienceTier: "advanced" },
+    );
+
+    expect(request.profile.biometrics).toBe(profile.biometrics);
+    expect(request.profile.experienceTier).toBe("advanced");
+  });
+
+  it("patch combines with lifestyle + orthopedic overrides in one profile object", () => {
+    const profile = getActiveProfile();
+    const lifestyle: LifestyleProfile = {
+      sleepDuration: "under-6",
+      dailyActivity: "high",
+      stressLevel: "low",
+    };
+
+    const request = buildGeneratePlanRequest(
+      profile,
+      ["strength"],
+      ["smart-watch"],
+      lifestyle,
+      { limitations: ["knee"], caution: "gentle knee" },
+      { biometrics: { ageYears: 25, heightCm: 180, weightKg: 80 }, experienceTier: "novice" },
+    );
+
+    expect(request.profile).not.toBe(profile);
+    expect(request.profile.lifestyle).toEqual(lifestyle);
+    expect(request.profile.orthopedicLimitations).toEqual(["knee"]);
+    expect(request.profile.caution).toBe("gentle knee");
+    expect(request.profile.biometrics).toEqual({ ageYears: 25, heightCm: 180, weightKg: 80 });
+    expect(request.profile.experienceTier).toBe("novice");
+    // The multiplier never rides the wire — only the tier id does (A4).
+    expect(JSON.parse(JSON.stringify(request))).not.toContain("0.8");
+    expect(JSON.parse(JSON.stringify(request))).not.toContain("multiplier");
   });
 });

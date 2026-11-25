@@ -56,6 +56,24 @@ describe("shared/ui molecules ChoiceChipGroup — behavior", () => {
     expect(pressedIndex).toBeGreaterThan(lowIndex);
     expect(html.split('aria-pressed="false"').length - 1).toBe(OPTIONS.length - 1);
   });
+
+  it("value=null (required-but-unanswered group): zero pressed chips, all options rendered", () => {
+    const html = render(
+      <ChoiceChipGroup
+        legend="Experience tier"
+        options={OPTIONS}
+        value={null}
+        onChange={() => {}}
+      />,
+    );
+    expect(html.split('aria-pressed="true"').length - 1).toBe(0);
+    // Every chip renders unpressed — never missing.
+    expect(html.split('aria-pressed="false"').length - 1).toBe(OPTIONS.length);
+    expect(html).toContain(">Low<");
+    expect(html).toContain(">Medium<");
+    expect(html).toContain(">High<");
+    expect(html).toContain(">Experience tier</legend>");
+  });
 });
 
 describe("shared/ui molecules ChoiceChipGroup — source guards (ADR-0001 D5)", () => {
