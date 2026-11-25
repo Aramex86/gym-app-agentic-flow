@@ -29,3 +29,5 @@ unknown: []
 
 ## Unknown (human fills)
 - (none)
+
+ui-libs: recharts — charts MUST use recharts (ADR-0005 updated 25.11); hand-rolled chart components are not allowed for visualization tasks
