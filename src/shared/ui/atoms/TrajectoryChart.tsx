@@ -1,12 +1,21 @@
 /* shared/ui/atoms/TrajectoryChart — dumb, token-styled line trajectory.
    Layer reason: shared/ui atom (ADR-0001 D5 boundary test) — describable
-   without any training domain: points in, inline SVG out. Zero-dep
-   hand-rolled SVG (ADR-0005, no chart package), zero network, colors ONLY
-   via var(--…) tokens (ADR-0001 D5). One y-axis, one series — the caller
-   names the series in its <figcaption>; the tooltip is the native SVG
-   <title>. No data access, no state, imports react types only. */
+   without any training domain: points in, chart out. Rendering is
+   delegated to recharts (plan v2 §3): a linear line with a dot per
+   populated bucket (connectNulls={false} — no invented shape, no filled
+   gaps), one y-axis, one series — the caller names the series in its
+   <figcaption>. Zero network, colors ONLY via var(--…) tokens (ADR-0001
+   D5). No data access, no state. */
 
 import type { JSX } from "react";
+import {
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
 
 /** One point of a trajectory line. */
 export interface TrajectoryPoint {
@@ -24,44 +33,74 @@ export interface TrajectoryChartProps {
    * value — this label is the accessible equivalent of a table view.
    */
   ariaLabel: string;
-  /** Unit suffix printed with ticks/direct label, e.g. "kg". */
+  /** Unit suffix printed with tick titles/direct label, e.g. "kg". */
   unit?: string;
 }
 
-/* Fixed viewBox (plan §6): font sizes are viewBox units, so text scales
-   with the chart while `width: 100%` keeps it responsive. */
-const VIEW_WIDTH = 240;
-const VIEW_HEIGHT = 96;
-const PAD_LEFT = 34;
-const PAD_RIGHT = 10;
-const PAD_TOP = 10;
-const PAD_BOTTOM = 18;
-const PLOT_WIDTH = VIEW_WIDTH - PAD_LEFT - PAD_RIGHT; // 196
-const PLOT_HEIGHT = VIEW_HEIGHT - PAD_TOP - PAD_BOTTOM; // 68
-const PLOT_RIGHT = PAD_LEFT + PLOT_WIDTH;
-const BASELINE_Y = PAD_TOP + PLOT_HEIGHT;
+/* Fixed pixel canvas — identical geometry intent to RangeBandChart (plan
+   §6.2 shared canvas); recharts draws an SVG of exactly this size under a
+   100%-wide wrapper, so the two focus charts still align optically. */
+const CHART_WIDTH = 240;
+const CHART_HEIGHT = 96;
 
-const tickStyle = {
+const axisTickStyle = {
   fill: "var(--text-muted)",
   fontFamily: "var(--font-metric)",
   fontSize: 8,
 } as const;
 
 // WHY the font shorthand: csstype types fontWeight as a closed union and
-// rejects `var(--…)`; `font` accepts arbitrary strings (StatCard pattern).
+// rejects `var(--…)`; plain style objects accept arbitrary strings
+// (StatCard pattern).
 const valueStyle = {
-  fill: "var(--text-high)",
+  color: "var(--text-high)",
   fontFamily: "var(--font-metric)",
   fontSize: 9,
   fontWeight: 600,
 } as const;
 
+/** `12 kg` / `12` — one place for the unit suffix join. */
+function unitSuffix(unit: string | undefined): string {
+  return unit ? ` ${unit}` : "";
+}
+
+/* Props recharts injects into a custom Line dot renderer. */
+interface LineDotProps {
+  cx?: number | null;
+  cy?: number | null;
+  /** The mapped trajectory data row (label/value). */
+  payload: TrajectoryPoint;
+}
+
 /**
- * Renders a single-series line chart (points + connecting polyline) as an
- * inline SVG: y min/max ticks, one direct label on the last point, native
- * <title> tooltip per point.
+ * Builds the custom recharts dot renderer (closure over the unit): one
+ * volt circle per populated bucket, carrying the native <title> tooltip
+ * (plan v2 §3 — data-testid="trajectory-point" per mark).
+ */
+function makeTrajectoryDot(unit: string | undefined): (props: LineDotProps) => JSX.Element {
+  return (dotProps) => (
+    <circle
+      data-testid="trajectory-point"
+      cx={dotProps.cx ?? undefined}
+      cy={dotProps.cy ?? undefined}
+      r={4}
+      strokeWidth={2}
+      fill="var(--accent-volt)"
+      stroke="var(--surface)"
+    >
+      <title>
+        {`${dotProps.payload.label}: ${dotProps.payload.value}${unitSuffix(unit)}`}
+      </title>
+    </circle>
+  );
+}
+
+/**
+ * Renders a single-series line chart (points + connecting line) via
+ * recharts: y min/max ticks, one direct HTML label on the last point,
+ * per-point native <title> tooltip.
  * @param props Points, accessible name, optional unit suffix.
- * @returns The SVG chart, or null for zero points (nothing to draw).
+ * @returns The chart figure, or null for zero points (nothing to draw).
  * @remarks Do not use for multi-series data — there is no legend; the
  *   caller's figcaption names the single series.
  */
@@ -78,98 +117,74 @@ export function TrajectoryChart(props: TrajectoryChartProps): JSX.Element | null
   const yMin = Math.max(0, rawMin - pad);
   const yMax = rawMax + pad;
 
-  // WHY linear map from the padded domain: gridlines/labels share it.
-  const y = (value: number): number =>
-    PAD_TOP + (1 - (value - yMin) / (yMax - yMin)) * PLOT_HEIGHT;
   // WHY: the 10% pad yields stray decimals (100.76) — ticks round to the
   // same 1-decimal convention as the data (plan §1 rounding).
-  const tick = (value: number): number => Math.round(value * 10) / 10;
-  // X slots: one point → plot centre; otherwise evenly spread 0..1.
-  const x = (index: number): number =>
-    points.length === 1
-      ? PAD_LEFT + PLOT_WIDTH / 2
-      : PAD_LEFT + (index / (points.length - 1)) * PLOT_WIDTH;
+  const formatTick = (value: number): string => `${Math.round(value * 10) / 10}`;
 
   const last = points[points.length - 1]!;
-  const lastX = x(points.length - 1);
-  const lastY = y(last.value);
-  // Direct label sits above the point, right-anchored, clamped inside the
-  // viewBox so the text never spills past the SVG edge.
-  const labelX = Math.min(lastX + 8, VIEW_WIDTH - 2);
-  const labelY = Math.max(lastY - 8, PAD_TOP + 10);
 
   return (
-    <svg
-      viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
+    <figure
       role="img"
       aria-label={ariaLabel}
-      style={{ width: "100%", height: "auto", display: "block" }}
+      style={{ margin: 0, position: "relative" }}
     >
-      {/* Grid: top edge + baseline only (plan §6.1 — no vertical grid). */}
-      <line
-        x1={PAD_LEFT}
-        y1={PAD_TOP}
-        x2={PLOT_RIGHT}
-        y2={PAD_TOP}
-        strokeWidth={1}
-        style={{ stroke: "var(--edge)" }}
-      />
-      <line
-        x1={PAD_LEFT}
-        y1={BASELINE_Y}
-        x2={PLOT_RIGHT}
-        y2={BASELINE_Y}
-        strokeWidth={1}
-        style={{ stroke: "var(--edge)" }}
-      />
-      {points.length >= 2 ? (
-        <polyline
-          points={points.map((point, index) => `${x(index)},${y(point.value)}`).join(" ")}
-          fill="none"
+      <LineChart
+        width={CHART_WIDTH}
+        height={CHART_HEIGHT}
+        data={points}
+        margin={{ top: 10, right: 10, bottom: 0, left: 0 }}
+      >
+        {/* Grid: min/max lines only (plan §6.1 — no vertical grid). */}
+        <CartesianGrid
+          stroke="var(--edge)"
+          vertical={false}
+          horizontalPoints={[yMin, yMax]}
+        />
+        <XAxis
+          dataKey="label"
+          interval={0}
+          tickLine={false}
+          axisLine={false}
+          tick={axisTickStyle}
+        />
+        <YAxis
+          domain={[yMin, yMax]}
+          tickFormatter={formatTick}
+          tickLine={false}
+          axisLine={false}
+          tick={axisTickStyle}
+          width={34}
+        />
+        <Tooltip />
+        {/* WHY linear + connectNulls={false}: the data law — one segment
+            per populated week pair, no smoothing, no filled gaps (plan
+            v2 §3, plan §1). */}
+        <Line
+          type="linear"
+          dataKey="value"
+          stroke="var(--accent-volt)"
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
-          style={{ stroke: "var(--accent-volt)" }}
+          dot={makeTrajectoryDot(unit)}
+          connectNulls={false}
+          isAnimationActive={false}
         />
-      ) : null}
-      {points.map((point, index) => (
-        <circle
-          key={`${point.label}-${index}`}
-          data-testid="trajectory-point"
-          cx={x(index)}
-          cy={y(point.value)}
-          r={4}
-          strokeWidth={2}
-          style={{ fill: "var(--accent-volt)", stroke: "var(--surface)" }}
-        >
-          <title>
-            {`${point.label}: ${point.value}${unit ? ` ${unit}` : ""}`}
-          </title>
-        </circle>
-      ))}
-      {/* Y min/max ticks at the left edge, end-anchored (plan §6.1). */}
-      <text x={PAD_LEFT - 6} y={y(yMax) + 3} textAnchor="end" style={tickStyle}>
-        {tick(yMax)}
-      </text>
-      <text x={PAD_LEFT - 6} y={y(yMin) + 3} textAnchor="end" style={tickStyle}>
-        {tick(yMin)}
-      </text>
-      {points.map((point, index) => (
-        <text key={`${point.label}-label-${index}`} x={x(index)} y={VIEW_HEIGHT - 4} textAnchor="middle" style={tickStyle}>
-          {point.label}
-        </text>
-      ))}
-      {/* Direct label sits above the last point, right-anchored, clamped
-          inside the viewBox so the text never spills past the SVG edge. */}
-      <text
+      </LineChart>
+      {/* Direct label sits at the chart's right edge — an HTML span over
+          the SVG (plan v2 §4 direct-label element pattern). */}
+      <span
         data-testid="trajectory-value"
-        x={labelX}
-        y={labelY}
-        textAnchor="end"
-        style={valueStyle}
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          ...valueStyle,
+        }}
       >
-        {`${last.value}${unit ? ` ${unit}` : ""}`}
-      </text>
-    </svg>
+        {`${last.value}${unitSuffix(unit)}`}
+      </span>
+    </figure>
   );
 }

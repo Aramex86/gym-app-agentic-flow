@@ -1,25 +1,24 @@
-/* shared/ui atoms RangeBandChart — node-safe SSR test (same react-dom/
-   server + ?raw source-scan pattern as StatCard.test.tsx). Covers plan
-   §9.2: bands + mean markers, collapsed bands still render, mean-less
-   bands render no marker, titles carry min–max (avg …), single direct
-   label, aria-label, zero bands → no output, and the ADR-0001 D5 source
-   guards (tokens only, no data fetching, react-only imports). */
+// @vitest-environment jsdom
+/* shared/ui atoms RangeBandChart — jsdom DOM test (recharts populates its
+   chart state after mount via effects, so SSR strings are empty; same
+   react-dom + raw role/attr assertion style as ExerciseFocusCharts.test.tsx
+   — no jest-dom, globals off, explicit cleanup). Covers plan §9.2: bands =
+   mean-mark rects + ErrorBar whiskers with native <title> tooltips,
+   collapsed bands still render, mean-less bands keep the min–max-only
+   tooltip title, single direct label, aria-label, zero bands → no output,
+   and the ADR-0001 D5 source guards (tokens only, no data fetching,
+   react+recharts imports only). */
 
-import { describe, expect, it } from "vitest";
-import type { ReactElement } from "react";
-import { renderToString } from "react-dom/server";
+import { afterEach, describe, expect, it } from "vitest";
+import { render, cleanup } from "@testing-library/react";
 import { RangeBandChart } from "../atoms/RangeBandChart";
 import rangeBandChartSource from "../atoms/RangeBandChart.tsx?raw";
 
-function render(element: ReactElement): string {
-  // react-dom/server emits <!-- --> between adjacent text nodes — strip
-  // them so text contents parse as plain text (StatCard pattern).
-  return renderToString(element).replaceAll("<!-- -->", "");
-}
+afterEach(cleanup);
 
 describe("shared/ui atoms RangeBandChart — behavior", () => {
-  it("2 bands: 2 rects with mean markers, labels, titles, direct value", () => {
-    const html = render(
+  it("2 bands: 2 mean-mark rects with whiskers + titles, labels, one direct value", () => {
+    const { container } = render(
       <RangeBandChart
         bands={[
           { label: "2026-10-29", min: 2100, max: 2560, mean: 2330 },
@@ -29,20 +28,30 @@ describe("shared/ui atoms RangeBandChart — behavior", () => {
         ariaLabel="Squat weekly volume dispersion"
       />,
     );
-    expect(html.split('data-testid="range-band"').length - 1).toBe(2);
-    expect(html.split('data-testid="range-mean"').length - 1).toBe(2);
+    const html = container.innerHTML;
+    // data-testid="range-band" lives on the outer figure (plan v2 §4) —
+    // per-band marks are the range-mean rects + recharts-errorBar whiskers.
+    expect(html.split('data-testid="range-band"').length - 1).toBe(1);
+    expect(container.querySelectorAll('[data-testid="range-mean"]').length).toBe(2);
+    expect(
+      [...container.querySelectorAll('[class*="recharts-errorBar"]')].filter((el) =>
+        el.classList.contains("recharts-errorBar"),
+      ).length,
+    ).toBe(2);
     expect(html).toContain("2026-10-29");
     expect(html).toContain("2026-11-05");
-    // Native tooltip carries min–max (avg …) — the plan §6.2 format.
-    expect(html).toContain("2100 kg–2560 kg (avg 2330 kg)");
-    expect(html).toContain('data-testid="range-value"');
-    expect(html).toContain("2562.5 kg"); // last mean direct label
-    expect(html).toContain('aria-label="Squat weekly volume dispersion"');
-    expect(html).toContain('role="img"');
+    // Band tooltip carries min–max (avg …) — the plan §6.2 format.
+    const titles = [...container.querySelectorAll("title")].map((t) => t.textContent);
+    expect(titles).toContain("2026-10-29: 2100 kg–2560 kg (avg 2330 kg)");
+    expect(container.querySelector('[data-testid="range-value"]')?.textContent).toBe(
+      "2562.5 kg",
+    );
+    const figure = container.querySelector('figure[role="img"]');
+    expect(figure?.getAttribute("aria-label")).toBe("Squat weekly volume dispersion");
   });
 
-  it("collapsed band (min === max) still renders a band; mean-less band renders NO marker", () => {
-    const html = render(
+  it("collapsed band (min === max) still renders; mean-less band has NO (avg …) marker", () => {
+    const { container } = render(
       <RangeBandChart
         bands={[
           { label: "w1", min: 100, max: 100 },
@@ -51,26 +60,34 @@ describe("shared/ui atoms RangeBandChart — behavior", () => {
         ariaLabel="mixed"
       />,
     );
-    expect(html.split('data-testid="range-band"').length - 1).toBe(2);
-    expect(html.split('data-testid="range-mean"').length - 1).toBe(1);
+    // The marker IS the bar: every band renders one (midpoint-positioned
+    // when the caller gave no mean) — plan v2 §4.
+    const marks = [...container.querySelectorAll('[data-testid="range-mean"]')];
+    expect(marks.length).toBe(2);
     // The mean-less band's tooltip shows only the min–max range.
-    expect(html).toContain("w1: 100–100</title>");
+    const titles = [...container.querySelectorAll("title")].map((t) => t.textContent);
+    expect(titles).toContain("w1: 100–100");
+    expect(titles).toContain("w2: 100–200 (avg 150)");
   });
 
-  it("0 bands: nothing to draw → empty output", () => {
-    expect(render(<RangeBandChart bands={[]} ariaLabel="empty" />)).toBe("");
+  it("0 bands: nothing to draw → no chart output", () => {
+    const { container } = render(<RangeBandChart bands={[]} ariaLabel="empty" />);
+    expect(container.querySelector('[data-testid="range-band"]')).toBeNull();
+    expect(container.innerHTML).toBe("");
   });
 
   it("pins tokens for marks, grid and text roles", () => {
-    const html = render(
+    const { container } = render(
       <RangeBandChart bands={[{ label: "w1", min: 1, max: 2, mean: 1.5 }]} ariaLabel="x" />,
     );
+    const html = container.innerHTML;
     expect(html).toContain("var(--accent-teal)");
     expect(html).toContain("var(--edge)");
     expect(html).toContain("var(--text-muted)");
-    expect(html).toContain("var(--text-high)");
-    expect(html).toContain("var(--surface)");
     expect(html).toContain("var(--font-metric)");
+    expect(html).toContain("var(--text-high)");
+    // WHY no var(--surface) pin: the surface-stroked mean dot circle is
+    // gone — plan v2 §4 replaces it with the Bar itself as the marker.
   });
 });
 
@@ -83,9 +100,11 @@ describe("shared/ui atoms RangeBandChart — source guards (ADR-0001 D5)", () =>
     expect(rangeBandChartSource).not.toMatch(/fetch\s*\(|axios/i);
   });
 
-  it("imports only react (dumb, domain-free)", () => {
+  it("imports only react + recharts (dumb, domain-free)", () => {
     const imports = rangeBandChartSource.match(/from\s+"([^"]+)"/g) ?? [];
     expect(imports.length).toBeGreaterThan(0);
-    for (const match of imports) expect(match).toBe('from "react"');
+    for (const match of imports) {
+      expect(["react", "recharts"]).toContain(match.slice(6, -1));
+    }
   });
 });
