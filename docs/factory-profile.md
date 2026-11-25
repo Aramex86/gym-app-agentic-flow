@@ -31,3 +31,5 @@ unknown: []
 - (none)
 
 ui-libs: recharts — charts MUST use recharts (ADR-0005 updated 25.11); hand-rolled chart components are not allowed for visualization tasks
+
+ui-libs: recharts - charts MUST use recharts; hand-rolled chart components not allowed
