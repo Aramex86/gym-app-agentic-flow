@@ -66,3 +66,14 @@ QUALITY BAR:
 - Prefer the smallest change that satisfies the task acceptance.
 - If the task is ambiguous, write the interpretation you chose into
   the plan's "Assumptions" section (the human gate will confirm).
+
+## SELF-REPORTING (the engine reads it, board 21.11)
+
+When you lack knowledge you need (a file, a mechanism, a convention of this
+repo), say so EXPLICITLY on its own line, exactly:
+
+KNOWLEDGE GAP: <what is missing, one short sentence>
+
+The engine records each such line as a trace event (max 3) - the factory
+reads them first when it learns what it is missing. Write the gap, then
+continue with your best assumption; a gap is never an excuse to stop.

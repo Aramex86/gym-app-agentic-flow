@@ -28,6 +28,7 @@ import { loadEnv } from "./env.mjs";
 import { guard as budgetGuard } from "./budget.mjs";
 import { copyFileSync as _copy } from "node:fs"; // (also used dynamically elsewhere)
 import * as changedTests from "./changed-tests.mjs";
+import { maybeRunAutoDiag } from "./auto-diag.mjs";
 
 loadEnv(); // repo .env (PIPELINE_CLI, OLLAMA_*, PIPELINE_BUDGET_USD) - system env wins
 
@@ -443,6 +444,8 @@ function latestSandbox() {
 // PIPELINE_BUDGET_USD; unset = unlimited. Set -> month-to-date spend from
 // the ledger is checked BEFORE --fix and before any hop spawns; exhausted =
 // honest stop with the budget sheet as the receipt.
+// round-9 §9: the hospital's 'pre' exam runs AFTER the profile gate and the
+// maintenance commands — "first circle of the day" means a circle, exactly.
 const _bg = budgetGuard();
 if (_bg)
   exit(1, "\n" + _bg + "\n(budget sheet: node scripts/budget.mjs)");
@@ -539,6 +542,10 @@ if (!task || !existsSync(task))
     1,
     "usage: node scripts/flow.mjs tasks\\<date>-<name>.md   |   node scripts/flow.mjs notion:<card-id> [--no-wt]   |   node scripts/flow.mjs --fix",
   );
+
+// HOSPITAL AUTOMATION ('pre' exam; round-9 §9: placed after the PROFILE GATE
+// and after every maintenance command exit — a circle is actually starting).
+maybeRunAutoDiag({ root: process.cwd(), phase: "pre" });
 
 const name = task
   .replace(/^.*[\\/]/, "")
@@ -647,8 +654,9 @@ const verifyVerdict = (wt, rid) => {
   const gates = ["lint", "typecheck", "test", "build"].filter(
     (g) => P[g] && P[g] !== "unknown" && String(P[g]).length < 400,
   );
-  // TARGETED-TEST LAW (master 24.11): the verdict re-run tests ONLY the
-  // files this circle changed (coverage suites get slower with every PR).
+  // TARGETED-TEST LAW (master 24.11, round-6 T1 fix): the developer's work is
+  // UNCOMMITTED at verdict time - so the change set is the WORKING TREE vs
+  // the fork point (`git diff <merge-base>`), untracked files appended.
   // Full `test` stays as the nightly/statistics run, not a circle gate.
   let targetedNote = "";
   try {
@@ -658,24 +666,46 @@ const verifyVerdict = (wt, rid) => {
         const m = spawnSync("git", ["rev-parse", "--verify", b], { cwd: wt, stdio: "pipe" });
         if (m.status === 0) return b;
       }
-      return "HEAD~1";
+      return null; // round-6 T3: no fork point known -> honest skip, no HEAD~1 guess
     })();
-    const mb = spawnSync("git", ["merge-base", "HEAD", base], { cwd: wt, stdio: "pipe" });
-    if (mb.status === 0) {
-      const df = spawnSync("git", ["diff", "--name-only", mb.stdout.toString().trim(), "HEAD"], { cwd: wt, stdio: "pipe" });
-      if (df.status === 0) {
-        const { tests, structural } = mapToTests(parseDiff(df.stdout.toString()));
+    if (base) {
+      const mb = spawnSync("git", ["merge-base", "HEAD", base], { cwd: wt, stdio: "pipe" });
+      const tracked = mb.status === 0
+        ? spawnSync("git", ["diff", "--name-only", mb.stdout.toString().trim()], { cwd: wt, stdio: "pipe" })
+        : { status: 1, stdout: Buffer.alloc(0) };
+      const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard"], { cwd: wt, stdio: "pipe" });
+      if (tracked.status === 0) {
+        // committed+unstaged working-tree diff vs fork point, PLUS untracked
+        // brand-new test files (a new test IS the deliverable).
+        const changedFiles = [
+          ...parseDiff(tracked.stdout.toString()),
+          ...parseDiff(untracked.stdout.toString()),
+        ];
+        const { tests, structural } = mapToTests(changedFiles);
         const cmd = targetedGate(P, tests, structural);
         if (cmd) {
           P.test = cmd; // swap the full suite for the targeted run
-          targetedNote = `${tests.length} targeted test file(s)`;
-        } else if (!structural && tests.length === 0) {
-          targetedNote = "no code files changed";
+          targetedNote = `targeted: ${tests.length} mapped test file(s) vs ${base}`;
+        } else if (structural) {
+          targetedNote = "targeted skipped: structural changes - full gate is the honest check";
+        } else if (tests.length === 0) {
+          targetedNote = "targeted skipped: no code files changed";
+        } else {
+          targetedNote = "targeted skipped: no test-targeted template in the passport - full gate runs";
         }
+      } else {
+        targetedNote = "targeted skipped: git diff failed";
       }
+    } else {
+      targetedNote = "targeted skipped: no fork point (develop/main) - full gate runs";
     }
+    // round-6 T2: the law must never degrade silently
+    console.log(targetedNote);
+    trace.ev(rid, { event: "verdict_verification", targeted: targetedNote });
   } catch (e) {
-    targetedNote = "targeted law skipped: " + (e && e.message || e);
+    targetedNote = "targeted skipped: " + (e && e.message || e);
+    console.log(targetedNote);
+    trace.ev(rid, { event: "verdict_verification", targeted: targetedNote });
   }
   const vTimeout = Math.max(
     30,
@@ -728,6 +758,10 @@ await committerStep(name, report, wt, rid);
 // circle_end: the run is complete (round-3: the event existed in trace.mjs
 // but was never emitted).
 trace.ev(rid, { event: "circle_end", task, name, verdict: "PASS" });
+// HOSPITAL AUTOMATION (master, 25.11): ADLC reviews the history after every
+// 5th circle — zero commands, read-only, no models. Opt-out
+// PIPELINE_AUTO_DIAG=0.
+maybeRunAutoDiag({ root: process.cwd(), phase: "post" });
 // HTML report: zero model tokens, best-effort (silently skipped if missing)
 if (existsSync(join("scripts", "report.mjs"))) {
   spawnSync(process.execPath, ["scripts/report.mjs", rid], {
