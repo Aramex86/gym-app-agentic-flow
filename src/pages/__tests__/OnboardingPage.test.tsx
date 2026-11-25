@@ -2,10 +2,11 @@
 /* pages OnboardingPage — routing + onboarding flow tests. */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { OnboardingPage } from "../OnboardingPage";
 import { getTrainingPlan } from "@entities/training-plan";
+import { resetActiveProfile } from "@entities/profile";
 import { resetComposerStatus } from "@shared/config/composerStatus";
 import { resetActivePlan } from "@shared/config/activePlan";
 import type { TrainingPlan } from "@entities/training-plan";
@@ -45,6 +46,19 @@ function jsonResponse(payload: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
+/** Completes the required foundation fields (Age 30, Height 178, Weight 75,
+    tier Intermediate) — the CTA gate before every Generate click. */
+function fillRequiredProfile(): void {
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Age" }), { target: { value: "30" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Height" }), { target: { value: "178" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Weight" }), { target: { value: "75" } });
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "Experience tier" })).getByRole("button", {
+      name: "Intermediate",
+    }),
+  );
+}
+
 function renderPage() {
   render(
     <MemoryRouter initialEntries={["/onboarding"]}>
@@ -62,6 +76,9 @@ afterEach(() => {
   vi.clearAllMocks();
   resetComposerStatus();
   resetActivePlan();
+  // WHY: the profile store is module-global; generating tests must leave the
+  // first-run fixture behind (plan A11).
+  resetActiveProfile();
 });
 
 describe("pages OnboardingPage", () => {
@@ -73,12 +90,32 @@ describe("pages OnboardingPage", () => {
     );
   });
 
+  it("Generate stays disabled with a goal until the required biometrics + tier complete, then navigates and stores the plan", async () => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
+
+    renderPage();
+    const generate = screen.getByRole("button", { name: "Generate" }) as HTMLButtonElement;
+
+    // Goal alone does not pass the gate.
+    fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    expect(generate.disabled).toBe(true);
+
+    fillRequiredProfile();
+    expect(generate.disabled).toBe(false);
+    fireEvent.click(generate);
+
+    await screen.findByText("My Plan screen");
+    expect(getTrainingPlan()).toBe(ONE_WEEK_PLAN);
+  });
+
   it("navigates to /progress on success and stores the generated plan", async () => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockResolvedValueOnce(jsonResponse(ONE_WEEK_PLAN));
 
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
 
     await screen.findByText("My Plan screen");
@@ -91,6 +128,7 @@ describe("pages OnboardingPage", () => {
 
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Strength" }));
+    fillRequiredProfile();
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
 
     await waitFor(() => {
