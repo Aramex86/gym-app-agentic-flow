@@ -5,12 +5,16 @@
    Terminology per docs/context/glossary.md and ADR-0001. */
 
 import type {
+  ExerciseFocus,
   InsightSessionSummary,
   LoggedSet,
   PersonalRecord,
   ReviewPeriod,
   SessionLogEntry,
   SessionLogRow,
+  TrackedExercise,
+  WeeklyE1rmPoint,
+  WeeklyVolumeBand,
 } from "./types";
 
 /** Length of the (single, fixed) review period in days. See A5 of the task
@@ -149,4 +153,172 @@ export function selectInsightSessionSummaries(
     )
     .sort(byDateAsc)
     .map((row) => ({ id: row.id, date: row.date, split: row.split, prCount: row.records.length }));
+}
+
+/** Weekly bucket count of the exercise-focus window (task plan §5.2). */
+export const FOCUS_WEEKS = 4;
+/** Whole-window length in days; feeds selectReviewPeriod (FOCUS_WEEKS * 7). */
+export const FOCUS_WINDOW_DAYS = FOCUS_WEEKS * 7;
+
+/** Round to 1 decimal (same rounding as estimateOneRepMax, kept local so
+    both selectors share one helper without exposing it publicly). */
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/** ISO YYYY-MM-DD from a UTC epoch ms (UTC keeps windows clock-independent). */
+function isoDate(epochMs: number): string {
+  return new Date(epochMs).toISOString().slice(0, 10);
+}
+
+/** Entries inside `period.from..period.to` (inclusive), ascending — the same
+    lexicographic window filter as selectInsightSessionSummaries. */
+function windowedEntries(
+  entries: readonly SessionLogEntry[],
+  period: ReviewPeriod,
+): SessionLogEntry[] {
+  return [...entries]
+    .sort(byDateAsc)
+    .filter(
+      (entry) =>
+        entry.date.localeCompare(period.from) >= 0 &&
+        entry.date.localeCompare(period.to) <= 0,
+    );
+}
+
+/** Weekly bucket index of a date inside the window, or null when the date
+    falls outside the `weeks` buckets (guards finite + in-range, plan §5.2
+    step 3). WHY offset from period.from, not calendar weeks: A1 pins the
+    four 7-day buckets of the review window, so the newest partial week
+    never changes shape. */
+function bucketIndexOf(date: string, fromMs: number, weeks: number): number | null {
+  const offsetMs = Date.parse(`${date}T00:00:00.000Z`) - fromMs;
+  const index = Math.floor(offsetMs / (7 * 24 * 60 * 60 * 1000));
+  return Number.isFinite(index) && index >= 0 && index < weeks ? index : null;
+}
+
+/** Per-exercise aggregate for one weekly bucket. */
+interface WeeklyBucket {
+  bestE1rm: number;
+  sessionVolumes: number[];
+  exerciseName: string;
+}
+
+/**
+ * Exercises logged inside the focus window, sorted for the selector chips.
+ * Names come from the FIRST sighting in the ascending (date, id) walk;
+ * exercises that appear only outside the window are excluded.
+ * @param entries Raw log entries, any order.
+ * @param weeks Window length in weekly buckets; default {@link FOCUS_WEEKS}.
+ * @returns Options sorted by exerciseName then exerciseId; empty when no
+ *   window exists (empty log).
+ */
+export function selectTrackedExercises(
+  entries: readonly SessionLogEntry[],
+  weeks: number = FOCUS_WEEKS,
+): TrackedExercise[] {
+  const period = selectReviewPeriod(entries, weeks * 7);
+  if (!period) return [];
+  const firstSighting = new Map<string, string>();
+  for (const entry of windowedEntries(entries, period)) {
+    for (const set of entry.sets) {
+      if (!firstSighting.has(set.exerciseId)) {
+        firstSighting.set(set.exerciseId, set.exerciseName);
+      }
+    }
+  }
+  return [...firstSighting.entries()]
+    .map(([exerciseId, exerciseName]) => ({ exerciseId, exerciseName }))
+    .sort(
+      (a, b) =>
+        a.exerciseName.localeCompare(b.exerciseName) ||
+        a.exerciseId.localeCompare(b.exerciseId),
+    );
+}
+
+/**
+ * Derives the exercise-focus series for one exercise: weekly best-Epley
+ * e1RM points and weekly per-session tonnage (volume) bands over the
+ * 4-week window. Pure, order-independent; the input is never mutated.
+ *
+ * Only POPULATED buckets produce points/bands — no synthetic, interpolated
+ * or filled-forward weeks (task plan §1), so the charts show exactly what
+ * was logged. Sessions outside the window and sessions without the
+ * exercise are ignored; `null` when no populated bucket remains (unknown
+ * exercise / empty log).
+ *
+ * @param entries Raw log entries, any order.
+ * @param exerciseId The exercise to focus (plan-exercise id family).
+ * @param weeks Window length in weekly buckets; default {@link FOCUS_WEEKS}.
+ * @returns The focus series, or null for an unusable input.
+ */
+export function selectExerciseFocus(
+  entries: readonly SessionLogEntry[],
+  exerciseId: string,
+  weeks: number = FOCUS_WEEKS,
+): ExerciseFocus | null {
+  const period = selectReviewPeriod(entries, weeks * 7);
+  if (!period) return null;
+  const fromMs = Date.parse(`${period.from}T00:00:00.000Z`);
+
+  const buckets = new Map<number, WeeklyBucket>();
+  for (const entry of windowedEntries(entries, period)) {
+    const index = bucketIndexOf(entry.date, fromMs, weeks);
+    if (index === null) continue;
+    const sets = entry.sets.filter((set) => set.exerciseId === exerciseId);
+    if (sets.length === 0) continue;
+
+    let best = Number.NEGATIVE_INFINITY;
+    let tonnage = 0;
+    for (const set of sets) {
+      best = Math.max(best, estimateOneRepMax(set.weightKg, set.reps));
+      // Per-session tonnage (plan A2): Σ(weightKg × reps × sets).
+      tonnage += set.weightKg * set.reps * set.sets;
+    }
+    const bucket = buckets.get(index) ?? {
+      bestE1rm: Number.NEGATIVE_INFINITY,
+      sessionVolumes: [],
+      exerciseName: sets[0]!.exerciseName,
+    };
+    buckets.set(index, {
+      bestE1rm: Math.max(bucket.bestE1rm, best),
+      sessionVolumes: [...bucket.sessionVolumes, round1(tonnage)],
+      exerciseName: bucket.exerciseName,
+    });
+  }
+
+  if (buckets.size === 0) return null;
+
+  const e1rmPoints: WeeklyE1rmPoint[] = [];
+  const volumeBands: WeeklyVolumeBand[] = [];
+  // Ascending bucket index — the first one's name IS the first windowed
+  // sighting, so it matches selectTrackedExercises labels.
+  const firstIndex = [...buckets.keys()].sort((a, b) => a - b)[0]!;
+  const exerciseName = buckets.get(firstIndex)!.exerciseName;
+  for (const index of [...buckets.keys()].sort((a, b) => a - b)) {
+    const bucket = buckets.get(index)!;
+    const weekStart = isoDate(fromMs + index * 7 * 24 * 60 * 60 * 1000);
+    const sessionVolumes = bucket.sessionVolumes;
+    e1rmPoints.push({
+      weekStart,
+      valueKg: round1(bucket.bestE1rm),
+      sessionCount: sessionVolumes.length,
+    });
+    const total = sessionVolumes.reduce((sum, volume) => sum + volume, 0);
+    volumeBands.push({
+      weekStart,
+      minVolumeKg: round1(Math.min(...sessionVolumes)),
+      maxVolumeKg: round1(Math.max(...sessionVolumes)),
+      meanVolumeKg: round1(total / sessionVolumes.length),
+      sessionCount: sessionVolumes.length,
+    });
+  }
+
+  return {
+    exerciseId,
+    exerciseName,
+    weekCount: weeks,
+    e1rmPoints,
+    volumeBands,
+  };
 }
