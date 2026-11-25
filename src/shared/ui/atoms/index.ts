@@ -25,3 +25,5 @@ export { InfoCard } from "./InfoCard";
 export type { InfoCardProps } from "./InfoCard";
 export { AlertBanner } from "./AlertBanner";
 export type { AlertBannerProps } from "./AlertBanner";
+export { NumberField } from "./NumberField";
+export type { NumberFieldProps } from "./NumberField";

@@ -2,7 +2,12 @@
    plan.schema.ts (mirrors docs/contracts/plan-schema.md §§3-5) stays the
    single source of truth — the entity competes with nothing. */
 
-import type { OrthopedicLimitationId, UserProfile } from "@entities/profile";
+import type {
+  Biometrics,
+  ExperienceTierId,
+  OrthopedicLimitationId,
+  UserProfile,
+} from "@entities/profile";
 import type { TrainingPlan } from "@shared/config/plan.schema";
 
 export type {
@@ -39,6 +44,14 @@ export interface OrthopedicSelection {
   limitations: readonly OrthopedicLimitationId[];
   /** Raw free-form caution; sent verbatim, never trimmed. */
   caution: string;
+}
+
+/** Session-local onboarding values merged into the generate profile payload. */
+export interface GenerateProfilePatch {
+  /** Overrides profile.biometrics; null clears it (required form incomplete). */
+  biometrics?: Biometrics | null;
+  /** Overrides profile.experienceTier; null clears it (tier unanswered). */
+  experienceTier?: ExperienceTierId | null;
 }
 
 /** Wire request for POST /api/plan/generate. */

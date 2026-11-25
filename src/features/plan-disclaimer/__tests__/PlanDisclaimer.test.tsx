@@ -9,10 +9,12 @@ import { renderToString } from "react-dom/server";
 import type { UserProfile } from "@entities/profile";
 // WHY: plan 9e — UserProfile gained a required lifestyle field; plan
 // onboarding-orthopedic (A3) added required orthopedicLimitations/caution
-// fields. Fixtures add only the skippable defaults so disclaimer behavior is
+// fields; plan onboarding-biometrics added required biometrics/experienceTier.
+// Fixtures add only the skippable/unanswered defaults so disclaimer behavior is
 // unchanged (ADR-0001 D4).
 import {
   DEFAULT_LIFESTYLE_PROFILE,
+  DEFAULT_ONBOARDING_PROFILE,
   DEFAULT_ORTHOPEDIC_PROFILE,
   getActiveProfile,
   hasHealthConditions,
@@ -38,6 +40,7 @@ describe("features/plan-disclaimer — variant selection", () => {
           diseases: [],
           physicalProblems: [],
           lifestyle: DEFAULT_LIFESTYLE_PROFILE,
+          ...DEFAULT_ONBOARDING_PROFILE,
           ...DEFAULT_ORTHOPEDIC_PROFILE,
         }}
       />,
@@ -49,7 +52,7 @@ describe("features/plan-disclaimer — variant selection", () => {
   it("profile with a disease -> disease: doctor line and base line present", () => {
     const html = render(
       <PlanDisclaimer
-        profile={{ id: "t", name: "T", diseases: ["asthma"], physicalProblems: [], lifestyle: DEFAULT_LIFESTYLE_PROFILE, ...DEFAULT_ORTHOPEDIC_PROFILE }}
+        profile={{ id: "t", name: "T", diseases: ["asthma"], physicalProblems: [], lifestyle: DEFAULT_LIFESTYLE_PROFILE, ...DEFAULT_ONBOARDING_PROFILE, ...DEFAULT_ORTHOPEDIC_PROFILE }}
       />,
     );
     expect(html).toContain(DOCTOR_LINE);
@@ -59,7 +62,7 @@ describe("features/plan-disclaimer — variant selection", () => {
   it("profile with a physical problem -> disease path too", () => {
     const html = render(
       <PlanDisclaimer
-        profile={{ id: "t", name: "T", diseases: [], physicalProblems: ["knee injury"], lifestyle: DEFAULT_LIFESTYLE_PROFILE, ...DEFAULT_ORTHOPEDIC_PROFILE }}
+        profile={{ id: "t", name: "T", diseases: [], physicalProblems: ["knee injury"], lifestyle: DEFAULT_LIFESTYLE_PROFILE, ...DEFAULT_ONBOARDING_PROFILE, ...DEFAULT_ORTHOPEDIC_PROFILE }}
       />,
     );
     expect(html).toContain(DOCTOR_LINE);
