@@ -31,3 +31,7 @@ export { Badge } from "./Badge";
 export type { BadgeProps, BadgeTone } from "./Badge";
 export { Skeleton } from "./Skeleton";
 export type { SkeletonProps } from "./Skeleton";
+export { TrajectoryChart } from "./TrajectoryChart";
+export type { TrajectoryChartProps, TrajectoryPoint } from "./TrajectoryChart";
+export { RangeBandChart } from "./RangeBandChart";
+export type { RangeBandChartProps, RangeBandDatum } from "./RangeBandChart";

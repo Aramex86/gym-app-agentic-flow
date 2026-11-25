@@ -11,14 +11,20 @@ export type {
   InsightSessionSummary,
   ReviewInsightRequest,
   ReviewInsight,
+  TrackedExercise,
+  WeeklyE1rmPoint,
+  WeeklyVolumeBand,
+  ExerciseFocus,
 } from "./types";
-export { REVIEW_PERIOD_DAYS, estimateOneRepMax } from "./slice";
+export { REVIEW_PERIOD_DAYS, estimateOneRepMax, FOCUS_WEEKS, FOCUS_WINDOW_DAYS } from "./slice";
 export { SESSION_LOG_SAMPLE } from "./sample";
 export {
   selectSessionLogRows,
   selectSessionsNewestFirst,
   selectReviewPeriod,
   selectInsightSessionSummaries,
+  selectTrackedExercises,
+  selectExerciseFocus,
 } from "./slice";
 export {
   INSIGHT_ENDPOINT,
