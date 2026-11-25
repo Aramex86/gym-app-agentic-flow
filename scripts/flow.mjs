@@ -507,7 +507,10 @@ if (arg1 === "--resume" || arg1 === "-resume") {
   clog("resume", `\n===> RESUME: ${rname} from ${stage.toUpperCase()} (planner already paid — skipped)`);
   if (stage === "developer") {
     clog("developer", "\n===> DEVELOPER");
-    if (hop(["developer", "-i", join("docs", "plans", rname + "-plan.md"), "implement the plan from the input file"], rwt, rid2) !== 0)
+    const d = process.env.PIPELINE_TASK_DIRECTIVE;
+    const devPrompt = "implement the plan from the input file"
+      + (d ? `. ADDITIONAL DIRECTIVE (master): ${d} The directive overrides the plan where they conflict.` : "");
+    if (hop(["developer", "-i", join("docs", "plans", rname + "-plan.md"), devPrompt], rwt, rid2) !== 0)
       exit(1, "developer hop failed");
     console.log("\n>> working tree after developer (sandbox):");
     spawnSync("git", ["status", "--short"], { stdio: "inherit", cwd: rwt });
