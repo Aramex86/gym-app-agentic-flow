@@ -3,6 +3,8 @@ import { HistoryTable, Button, ToggleChip } from "@shared/ui";
 import type { HistoryRowInfo } from "@shared/ui";
 import { PlanDisclaimer } from "@features/plan-disclaimer";
 import { PlanRecompose } from "@features/plan-recompose";
+import { HistoryLog } from "@features/progress-history";
+import { InsightCard } from "@features/progress-insight";
 import { getTrainingPlan } from "@entities/training-plan";
 import type { TrainingPlan } from "@entities/training-plan";
 
@@ -106,6 +108,11 @@ export function ProgressPage() {
           <p style={cardValueStyle}>{totalSets}</p>
         </div>
       </div>
+
+      {/* Task A7/S6: insight card auto-loads its gate request on mount; the
+          history log works offline — a failing insight never blocks it. */}
+      <InsightCard />
+      <HistoryLog />
 
       <HistoryTable
         weeks={weeks}

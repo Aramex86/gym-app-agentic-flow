@@ -5,7 +5,7 @@
    node-safe). No jest-dom: raw role/attribute assertions. Vitest globals are
    off and no global setup exists, so cleanup is invoked explicitly. */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { render, screen, within, fireEvent, cleanup } from "@testing-library/react";
 import { ProgressPage } from "../ProgressPage";
@@ -14,6 +14,29 @@ import { SAMPLE_PLAN } from "@shared/config/plan.sample";
 
 function headerCount(table: HTMLElement): number {
   return within(table).getAllByRole("columnheader").length;
+}
+
+/* Plan A7: the page now auto-loads the AI review insight on mount, so the
+   gate endpoint is stubbed BEFORE every full-page render and the mount-time
+   request never hits the network. The compact fixture below (ToggleChip +
+   HistoryTable only, no page) never fetches. Column/ordering/disclaimer
+   assertions are unchanged. */
+function stubInsightFetch(): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            periodId: "last-4-weeks",
+            model: "kimi-k3.1",
+            insight: "Bench progressed twice; squat PR at 122.5 kg e1RM.",
+          }),
+      } as unknown as Response),
+    ),
+  );
 }
 
 /* Test-only stateful fixture: real ToggleChip + real HistoryTable WITHOUT
@@ -37,7 +60,12 @@ function historyTable(): HTMLElement {
   return screen.getByRole("region", { name: "Training history" });
 }
 
-afterEach(() => cleanup());
+beforeEach(() => stubInsightFetch());
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("pages ProgressPage — compact fixture (no actions, 6 → 4)", () => {
   it("starts at 6 columns with the chip off, flips to 4 on click", () => {

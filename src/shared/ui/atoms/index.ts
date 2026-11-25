@@ -27,3 +27,7 @@ export { AlertBanner } from "./AlertBanner";
 export type { AlertBannerProps } from "./AlertBanner";
 export { NumberField } from "./NumberField";
 export type { NumberFieldProps } from "./NumberField";
+export { Badge } from "./Badge";
+export type { BadgeProps, BadgeTone } from "./Badge";
+export { Skeleton } from "./Skeleton";
+export type { SkeletonProps } from "./Skeleton";
