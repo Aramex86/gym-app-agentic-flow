@@ -1,12 +1,22 @@
-/* shared/ui/atoms/RangeBandChart — dumb, token-styled min-max band chart.
+/* shared/ui/atoms/RangeBandChart — dumb, token-styled min–max band chart.
    Layer reason: shared/ui atom (ADR-0001 D5 boundary test) — describable
-   without any training domain: bands in, inline SVG out. Zero-dep
-   hand-rolled SVG (ADR-0005, no chart package), zero network, colors ONLY
-   via var(--…) tokens (ADR-0001 D5). One y-axis, one series — the caller
-   names the series in its <figcaption>; the tooltip is the native SVG
-   <title>. No data access, no state, imports react types only. */
+   without any training domain: bands in, chart out. Rendering is delegated
+   to recharts (plan v2 §4): mean bars + an ErrorBar whisker per band, one
+   y-axis, one series — the caller names the series in its <figcaption>.
+   Zero network, colors ONLY via var(--…) tokens (ADR-0001 D5). No data
+   access, no state. */
 
 import type { JSX } from "react";
+import {
+  ComposedChart,
+  Bar,
+  CartesianGrid,
+  ErrorBar,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
+import type { BarShapeProps } from "recharts";
 
 /** One range band (min–max, optional mean marker). */
 export interface RangeBandDatum {
@@ -32,29 +42,23 @@ export interface RangeBandChartProps {
   unit?: string;
 }
 
-/* Fixed viewBox, identical geometry to TrajectoryChart (plan §6.2) — the
-   two focus charts align optically because they share one canvas. */
-const VIEW_WIDTH = 240;
-const VIEW_HEIGHT = 96;
-const PAD_LEFT = 34;
-const PAD_RIGHT = 10;
-const PAD_TOP = 10;
-const PAD_BOTTOM = 18;
-const PLOT_WIDTH = VIEW_WIDTH - PAD_LEFT - PAD_RIGHT; // 196
-const PLOT_HEIGHT = VIEW_HEIGHT - PAD_TOP - PAD_BOTTOM; // 68
-const PLOT_RIGHT = PAD_LEFT + PLOT_WIDTH;
-const BASELINE_Y = PAD_TOP + PLOT_HEIGHT;
+/* Fixed pixel canvas — identical geometry intent to TrajectoryChart (plan
+   §6.2 shared canvas); recharts draws an SVG of exactly this size under a
+   100%-wide wrapper, so the two focus charts still align optically. */
+const CHART_WIDTH = 240;
+const CHART_HEIGHT = 96;
 
-const tickStyle = {
+const axisTickStyle = {
   fill: "var(--text-muted)",
   fontFamily: "var(--font-metric)",
   fontSize: 8,
 } as const;
 
 // WHY the font shorthand: csstype types fontWeight as a closed union and
-// rejects `var(--…)`; `font` accepts arbitrary strings (StatCard pattern).
+// rejects `var(--…)`; plain style objects accept arbitrary strings
+// (StatCard pattern).
 const valueStyle = {
-  fill: "var(--text-high)",
+  color: "var(--text-high)",
   fontFamily: "var(--font-metric)",
   fontSize: 9,
   fontWeight: 600,
@@ -65,12 +69,75 @@ function unitSuffix(unit: string | undefined): string {
   return unit ? ` ${unit}` : "";
 }
 
+/* The chart-local data row: mean (bar top) + the ErrorBar whisker offsets.
+   WHY the title rides along: recharts owns the tooltip, so the per-band
+   native <title> (plan §4 — a missing mean keeps the tooltip text the
+   same) is carried by the custom bar shape via this field. */
+interface BandPoint {
+  label: string;
+  /** Bar top (kg); the band midpoint when the caller gave no mean. */
+  mean: number;
+  /** [mean - min, max - mean] — ErrorBar offsets landing on the band edges. */
+  bandError: [number, number];
+  /** The pre-format band tooltip: `label: min–max (avg mean)`. */
+  title: string;
+}
+
 /**
- * Renders a single-series min–max band chart (vertical range rectangles
- * with an optional mean marker) as an inline SVG: y min/max ticks, one
- * direct label on the last mean, native <title> tooltip per band.
+ * Maps the public band data to chart-local points, formatting the per-band
+ * tooltip title exactly as the hand-rolled SVG <title> did. A missing mean
+ * is positioned at the band midpoint while the whisker still spans
+ * min–max (plan v2 §4).
+ */
+function toBandPoints(
+  bands: readonly RangeBandDatum[],
+  unit: string | undefined,
+): BandPoint[] {
+  return bands.map((band) => {
+    const mean = band.mean ?? (band.min + band.max) / 2;
+    return {
+      label: band.label,
+      mean,
+      bandError: [mean - band.min, band.max - mean],
+      title: `${band.label}: ${band.min}${unitSuffix(unit)}–${band.max}${unitSuffix(unit)}${band.mean !== undefined ? ` (avg ${band.mean}${unitSuffix(unit)})` : ""}`,
+    };
+  });
+}
+
+/**
+ * Custom recharts Bar shape: one teal marker rectangle per band, carrying
+ * the native <title> tooltip (plan v2 §4 — data-testid="range-mean" on the
+ * Bar; the marker IS the Bar). Collapsed bands (min === max) render a
+ * zero-height rect — the plan §6.2 pin keeps the mark in the DOM.
+ */
+function MeanBarShape(props: BarShapeProps): JSX.Element {
+  const { x, y, width, height, payload } = props;
+  return (
+    <rect
+      data-testid="range-mean"
+      x={x}
+      y={y}
+      width={width}
+      /* WHY max(height, 0): a collapsed band (min === max) still renders a
+         (zero-height) rect — plan §6.2 pins the mark. */
+      height={Math.max(height, 0)}
+      rx={4}
+      fill="var(--accent-teal)"
+      fillOpacity={0.2}
+      strokeWidth={1}
+      stroke="var(--accent-teal)"
+    >
+      <title>{payload.title}</title>
+    </rect>
+  );
+}
+
+/**
+ * Renders a single-series min–max band chart (per-band mean bars with
+ * min–max ErrorBar whiskers) via recharts: y min/max ticks, one direct
+ * HTML label on the last mean, per-band native <title> tooltip.
  * @param props Bands, accessible name, optional unit suffix.
- * @returns The SVG chart, or null for zero bands (nothing to draw).
+ * @returns The chart figure, or null for zero bands (nothing to draw).
  * @remarks Do not use for multi-series data — there is no legend; the
  *   caller's figcaption names the single series.
  */
@@ -86,119 +153,83 @@ export function RangeBandChart(props: RangeBandChartProps): JSX.Element | null {
   const yMin = Math.max(0, rawMin - pad);
   const yMax = rawMax + pad;
 
-  // WHY linear map from the padded domain: gridlines/labels share it.
-  const y = (value: number): number =>
-    PAD_TOP + (1 - (value - yMin) / (yMax - yMin)) * PLOT_HEIGHT;
   // WHY: the 10% pad yields stray decimals (256.4) — ticks round to the
   // same 1-decimal convention as the data (plan §1 rounding).
-  const tick = (value: number): number => Math.round(value * 10) / 10;
-  // X slots: one band → plot centre; otherwise evenly spread 0..1.
-  const x = (index: number): number =>
-    bands.length === 1
-      ? PAD_LEFT + PLOT_WIDTH / 2
-      : PAD_LEFT + (index / (bands.length - 1)) * PLOT_WIDTH;
-  // Band width: capped so wide plots never draw slab-wide bands (plan §6.2).
-  const bandWidth = Math.min(18, (PLOT_WIDTH / bands.length) * 0.5);
+  const formatTick = (value: number): string => `${Math.round(value * 10) / 10}`;
 
-  const last = bands[bands.length - 1]!;
-  const lastIndex = bands.length - 1;
-  // Direct label sits above the last mean marker, right-anchored, clamped
-  // inside the viewBox so the text never spills past the SVG edge.
-  const labelX = Math.min(x(lastIndex) + 8, VIEW_WIDTH - 2);
-  const labelY = Math.max(y(last.mean ?? last.max) - 8, PAD_TOP + 10);
+  const bandPoints = toBandPoints(bands, unit);
+  // The direct label shows the caller's own last mean/max — NOT the
+  // midpoint-substituted chart row (plan v2 §4: `${last.mean ?? last.max}`),
+  // so a missing mean keeps reporting the band upper edge.
+  const lastBand = bands[bands.length - 1]!;
 
   return (
-    <svg
-      viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
+    <figure
+      data-testid="range-band"
       role="img"
       aria-label={ariaLabel}
-      style={{ width: "100%", height: "auto", display: "block" }}
+      style={{ margin: 0, position: "relative" }}
     >
-      {/* Grid: top edge + baseline only (plan §6.1/§6.2 — shared canvas). */}
-      <line
-        x1={PAD_LEFT}
-        y1={PAD_TOP}
-        x2={PLOT_RIGHT}
-        y2={PAD_TOP}
-        strokeWidth={1}
-        style={{ stroke: "var(--edge)" }}
-      />
-      <line
-        x1={PAD_LEFT}
-        y1={BASELINE_Y}
-        x2={PLOT_RIGHT}
-        y2={BASELINE_Y}
-        strokeWidth={1}
-        style={{ stroke: "var(--edge)" }}
-      />
-      {bands.map((band, index) => {
-        const top = y(band.max);
-        const bottom = y(band.min);
-        return (
-          <rect
-            key={`${band.label}-${index}`}
-            data-testid="range-band"
-            x={x(index) - bandWidth / 2}
-            y={top}
-            width={bandWidth}
-            /* WHY max(bottom, 0): a collapsed band (min === max) still
-               renders a (zero-height) rect — plan §6.2 pins the mark. */
-            height={Math.max(bottom - top, 0)}
-            rx={4}
-            fillOpacity={0.2}
-            strokeWidth={1}
-            style={{ fill: "var(--accent-teal)", stroke: "var(--accent-teal)" }}
-          >
-            <title>
-              {`${band.label}: ${band.min}${unitSuffix(unit)}–${band.max}${unitSuffix(unit)}${band.mean !== undefined ? ` (avg ${band.mean}${unitSuffix(unit)})` : ""}`}
-            </title>
-          </rect>
-        );
-      })}
-      {bands.map((band, index) =>
-        band.mean === undefined ? null : (
-          <circle
-            key={`${band.label}-mean-${index}`}
-            data-testid="range-mean"
-            cx={x(index)}
-            cy={y(band.mean)}
-            r={4}
-            strokeWidth={2}
-            style={{ fill: "var(--accent-teal)", stroke: "var(--surface)" }}
-          >
-            <title>
-              {`${band.label}: avg ${band.mean}${unitSuffix(unit)}`}
-            </title>
-          </circle>
-        ),
-      )}
-      {/* Y min/max ticks at the left edge, end-anchored (plan §6.1). */}
-      <text x={PAD_LEFT - 6} y={y(yMax) + 3} textAnchor="end" style={tickStyle}>
-        {tick(yMax)}
-      </text>
-      <text x={PAD_LEFT - 6} y={y(yMin) + 3} textAnchor="end" style={tickStyle}>
-        {tick(yMin)}
-      </text>
-      {bands.map((band, index) => (
-        <text
-          key={`${band.label}-label-${index}`}
-          x={x(index)}
-          y={VIEW_HEIGHT - 4}
-          textAnchor="middle"
-          style={tickStyle}
-        >
-          {band.label}
-        </text>
-      ))}
-      <text
-        data-testid="range-value"
-        x={labelX}
-        y={labelY}
-        textAnchor="end"
-        style={valueStyle}
+      <ComposedChart
+        width={CHART_WIDTH}
+        height={CHART_HEIGHT}
+        data={bandPoints}
+        margin={{ top: 10, right: 10, bottom: 0, left: 0 }}
       >
-        {`${last.mean ?? last.max}${unitSuffix(unit)}`}
-      </text>
-    </svg>
+        {/* Grid: min/max lines only (plan §6.1/§6.2 — no busy grid). */}
+        <CartesianGrid
+          stroke="var(--edge)"
+          vertical={false}
+          horizontalPoints={[yMin, yMax]}
+        />
+        <XAxis
+          dataKey="label"
+          interval={0}
+          tickLine={false}
+          axisLine={false}
+          tick={axisTickStyle}
+        />
+        <YAxis
+          domain={[yMin, yMax]}
+          tickFormatter={formatTick}
+          tickLine={false}
+          axisLine={false}
+          tick={axisTickStyle}
+          width={34}
+        />
+        <Tooltip />
+        <Bar
+          dataKey="mean"
+          fill="var(--accent-teal)"
+          fillOpacity={0.2}
+          shape={MeanBarShape}
+          isAnimationActive={false}
+        >
+          {/* WHY nested: recharts requires ErrorBar to be a child of a
+              graphical element (plan v2 §4 — direction y whiskers span
+              min–max around the bar top). */}
+          <ErrorBar
+            dataKey="bandError"
+            direction="y"
+            strokeWidth={1}
+            stroke="var(--accent-teal)"
+            isAnimationActive={false}
+          />
+        </Bar>
+      </ComposedChart>
+      {/* Direct label sits at the chart's right edge — an HTML span over
+          the SVG (plan v2 §4 direct-label element). */}
+      <span
+        data-testid="range-value"
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          ...valueStyle,
+        }}
+      >
+        {`${lastBand.mean ?? lastBand.max}${unitSuffix(unit)}`}
+      </span>
+    </figure>
   );
 }

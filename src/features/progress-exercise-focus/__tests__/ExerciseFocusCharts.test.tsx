@@ -112,7 +112,9 @@ describe("features progress-exercise-focus — sample render", () => {
   it("accessible names carry every value (table-equivalent aria-labels)", () => {
     vi.stubGlobal("fetch", fetchSpy);
     const { container } = render(<ExerciseFocusCharts onCompose={vi.fn()} />);
-    const [trajectory, volume] = [...container.querySelectorAll('svg[role="img"]')];
+    // Charts are recharts figures now (plan v2): role="img" moved from the
+    // SVG surface (which recharts marks role="application") to the figure.
+    const [trajectory, volume] = [...container.querySelectorAll('figure[role="img"]')];
     expect(trajectory?.getAttribute("aria-label")).toBe(
       "Back Squat estimated 1RM by week: week of 2026-10-30 116.7 kg; " +
         "week of 2026-11-06 116.7 kg; week of 2026-11-13 122.5 kg.",
