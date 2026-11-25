@@ -84,3 +84,49 @@ export interface ReviewInsight {
   /** Non-empty prose for the review period. */
   insight: string;
 }
+
+/** One exercise logged inside the exercise-focus window (selector option). */
+export interface TrackedExercise {
+  /** The PR comparison key (LoggedSet.exerciseId family). */
+  exerciseId: string;
+  /** Display name from the first ascending-order sighting. */
+  exerciseName: string;
+}
+
+/** One populated weekly bucket of an exercise's e1RM trajectory. */
+export interface WeeklyE1rmPoint {
+  /** ISO YYYY-MM-DD: the bucket start (period.from + 7 * bucketIndex). */
+  weekStart: string;
+  /** Best Epley e1RM in the bucket, 1 decimal kg. */
+  valueKg: number;
+  /** Sessions in the bucket containing the exercise; >= 1. */
+  sessionCount: number;
+}
+
+/** One populated weekly bucket of per-session tonnage dispersion. */
+export interface WeeklyVolumeBand {
+  /** ISO YYYY-MM-DD: the bucket start. */
+  weekStart: string;
+  /** Lowest per-session tonnage in the bucket, 1 decimal kg. */
+  minVolumeKg: number;
+  /** Highest per-session tonnage in the bucket, 1 decimal kg. */
+  maxVolumeKg: number;
+  /** Mean per-session tonnage in the bucket, 1 decimal kg. */
+  meanVolumeKg: number;
+  /** Sessions in the bucket containing the exercise; >= 1. */
+  sessionCount: number;
+}
+
+/** Everything the exercise-focus charts derive for one exercise. Only
+    POPULATED buckets are emitted (no synthetic, interpolated or filled
+    forward points — task plan §1); empty weeks simply stay absent. */
+export interface ExerciseFocus {
+  exerciseId: string;
+  exerciseName: string;
+  /** Fixed window length in weekly buckets (4). */
+  weekCount: number;
+  /** Populated buckets only, ascending; length 1..weekCount. */
+  e1rmPoints: WeeklyE1rmPoint[];
+  /** Populated buckets only, ascending; same weekStart set as e1rmPoints. */
+  volumeBands: WeeklyVolumeBand[];
+}
