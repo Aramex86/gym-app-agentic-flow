@@ -10,11 +10,21 @@
 export const FOCUS_COPY = {
   heading: "Exercise focus",
   selectorLegend: "Exercise",
-  trajectoryTitle: "4-week 1RM trajectory",
-  volumeTitle: "Volume dispersion",
   emptyTitle: "No tracked sets yet",
   emptyDescription: "Log a session or compose a plan to start tracking this lift.",
   composerCta: "Open AI composer",
+  // Static display copy (plan A6): no entity field, no domain claim.
+  t1Badge: "T1 Compound",
+  t1BadgeTitle: "T1 compound lift",
+  latestE1rmLabel: "Latest e1RM",
+  deltaTitle: "Change since the base week",
+  legendLine: "1RM Trajectory",
+  legendBar: "Volume (Sets × Load)",
+  peakPrefix: "Peak",
+  stripTitle: "Latest Velocity & RPE Profile",
+  stripMeanLabel: "Mean",
+  // Honest empty state (plan A3): no per-set velocity/RPE source exists yet.
+  stripEmpty: "Per-set velocity and RPE are not captured in the session log yet.",
 } as const;
 
 /**

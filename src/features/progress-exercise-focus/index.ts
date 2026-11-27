@@ -2,5 +2,5 @@
    kebab-case slice barrel (@features/progress-exercise-focus), never deep
    feature paths. */
 
-export { ExerciseFocusCharts } from "./ui/ExerciseFocusCharts";
-export type { ExerciseFocusChartsProps } from "./ui/ExerciseFocusCharts";
+export { ExerciseFocusChartCard } from "./ui/ExerciseFocusChartCard";
+export type { ExerciseFocusChartCardProps } from "./ui/ExerciseFocusChartCard";
