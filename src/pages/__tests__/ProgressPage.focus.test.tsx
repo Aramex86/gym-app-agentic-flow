@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /* pages ProgressPage — exercise-focus block placement (plan §9.4). jsdom
    via file-level directive; the insight gate request is stubbed globally
-   (same pattern as ProgressPage.test.tsx) and the stubspy asserts the
-   charts add ZERO extra network requests — only /api/progress/insight is
+   (same pattern as ProgressPage.test.tsx) and the stub spy asserts the
+   chart adds ZERO extra network requests — only /api/progress/insight is
    ever called. Cleanup/unstub explicit (globals off). */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 describe("pages ProgressPage — exercise focus block (plan §8.3)", () => {
-  it("renders the focus region with both charts BETWEEN insight and history", async () => {
+  it("renders the focus region with ONE combined chart BETWEEN insight and history", async () => {
     vi.stubGlobal("fetch", fetchStub);
     render(<ProgressPage />);
 
@@ -42,9 +42,20 @@ describe("pages ProgressPage — exercise focus block (plan §8.3)", () => {
     expect(following(insight, focus)).toBe(true);
     expect(following(focus, history)).toBe(true);
 
-    // Both charts render from the sample (Back Squat default, plan A3).
-    expect(screen.getByText("4-week 1RM trajectory · Back Squat")).toBeTruthy();
-    expect(screen.getByText("Volume dispersion · Back Squat")).toBeTruthy();
+    // Exactly ONE chart figure inside the focus block (plan §1: the two
+    // stacked charts merged into one ComposedChart).
+    expect(focus.querySelectorAll('figure[role="img"]').length).toBe(1);
+    // Legend labels render (both series + peak, Back Squat default).
+    expect(within(focus).getByText("1RM Trajectory")).toBeTruthy();
+    expect(within(focus).getByText("Volume (Sets × Load)")).toBeTruthy();
+    expect(within(focus).getByText("Peak: 122.5 kg e1RM")).toBeTruthy();
+    // Velocity/RPE strip: title + honest empty copy (plan A3).
+    expect(within(focus).getByText("Latest Velocity & RPE Profile")).toBeTruthy();
+    expect(
+      within(focus).getByText(
+        "Per-set velocity and RPE are not captured in the session log yet.",
+      ),
+    ).toBeTruthy();
     // Selector + hint render alongside (3 of 4 populated sample weeks).
     // WHY within(focus): the history table also has an "Exercise" column.
     expect(within(focus).getByText("Exercise")).toBeTruthy();
@@ -55,13 +66,13 @@ describe("pages ProgressPage — exercise focus block (plan §8.3)", () => {
     ).toBeTruthy();
   });
 
-  it("makes ZERO requests beyond the insight endpoint (charts derive client-side)", async () => {
+  it("makes ZERO requests beyond the insight endpoint (the chart derives client-side)", async () => {
     vi.stubGlobal("fetch", fetchStub);
     render(<ProgressPage />);
     await screen.findByRole("region", { name: "AI review insight" });
 
     // Every single fetch call targeted /api/progress/insight — the focus
-    // charts never touch the network (no synthetic data source, plan §1).
+    // chart never touches the network (no synthetic data source, plan §1).
     expect(fetchStub.mock.calls.length).toBeGreaterThan(0);
     for (const [url] of fetchStub.mock.calls) {
       expect(String(url)).toBe(INSIGHT_ENDPOINT);

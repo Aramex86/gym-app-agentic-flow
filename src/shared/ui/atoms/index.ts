@@ -35,3 +35,5 @@ export { TrajectoryChart } from "./TrajectoryChart";
 export type { TrajectoryChartProps, TrajectoryPoint } from "./TrajectoryChart";
 export { RangeBandChart } from "./RangeBandChart";
 export type { RangeBandChartProps, RangeBandDatum } from "./RangeBandChart";
+export { ComboChart } from "./ComboChart";
+export type { ComboChartProps, ComboChartPoint } from "./ComboChart";

@@ -129,4 +129,8 @@ export interface ExerciseFocus {
   e1rmPoints: WeeklyE1rmPoint[];
   /** Populated buckets only, ascending; same weekStart set as e1rmPoints. */
   volumeBands: WeeklyVolumeBand[];
+  /** Best e1RM of the 7 days immediately BEFORE the window: the
+      trajectory's base anchor (the chart's first x tick). Absent when that
+      week has no session — no synthetic anchor, no filled gap. */
+  baseAnchor?: WeeklyE1rmPoint;
 }
