@@ -49,6 +49,17 @@ const axisTickStyle = {
   fontSize: 8,
 } as const;
 
+/* Hover tooltip box recharts would otherwise draw light-themed (white box)
+   over the dark Kinetic Obsidian surface — every value is a token. */
+const tooltipBoxStyle = {
+  background: "var(--surface-lifted)",
+  border: "1px solid var(--edge)",
+  borderRadius: "var(--r-card)",
+  color: "var(--text-high)",
+  font: "11px var(--font-metric)",
+  padding: "var(--sp-xs) var(--sp-sm)",
+} as const;
+
 // WHY the font shorthand: csstype types fontWeight as a closed union and
 // rejects `var(--…)`; plain style objects accept arbitrary strings
 // (StatCard pattern).
@@ -156,7 +167,15 @@ export function TrajectoryChart(props: TrajectoryChartProps): JSX.Element | null
           tick={axisTickStyle}
           width={34}
         />
-        <Tooltip />
+        {/* WHY the raw formatter param: recharts' ValueType is wider than
+            number — annotating it `number` fails under strictFunctionTypes. */}
+        <Tooltip
+          cursor={{ stroke: "var(--edge)" }}
+          contentStyle={tooltipBoxStyle}
+          labelStyle={{ color: "var(--text-muted)" }}
+          itemStyle={{ color: "var(--text-high)" }}
+          formatter={(value) => `${value}${unitSuffix(unit)}`}
+        />
         {/* WHY linear + connectNulls={false}: the data law — one segment
             per populated week pair, no smoothing, no filled gaps (plan
             v2 §3, plan §1). */}

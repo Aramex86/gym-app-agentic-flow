@@ -54,6 +54,17 @@ const axisTickStyle = {
   fontSize: 8,
 } as const;
 
+/* Hover tooltip box recharts would otherwise draw light-themed (white box)
+   over the dark Kinetic Obsidian surface — every value is a token. */
+const tooltipBoxStyle = {
+  background: "var(--surface-lifted)",
+  border: "1px solid var(--edge)",
+  borderRadius: "var(--r-card)",
+  color: "var(--text-high)",
+  font: "11px var(--font-metric)",
+  padding: "var(--sp-xs) var(--sp-sm)",
+} as const;
+
 // WHY the font shorthand: csstype types fontWeight as a closed union and
 // rejects `var(--…)`; plain style objects accept arbitrary strings
 // (StatCard pattern).
@@ -133,6 +144,28 @@ function MeanBarShape(props: BarShapeProps): JSX.Element {
 }
 
 /**
+ * Custom recharts tooltip content: renders only the row's pre-format
+ * `min–max (avg mean)` title in a token-styled box.
+ * WHY a custom content component: the bare recharts default tooltip is
+ * light-themed AND would leak the internal `bandError` whisker offsets
+ * (e.g. `[2100, 2560]`) as a raw row — both are hidden here; the visible
+ * text stays the same format the native <title> already carries.
+ */
+interface BandTooltipProps {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload: BandPoint }>;
+}
+
+function BandTooltip({ active, payload }: BandTooltipProps): JSX.Element | null {
+  if (!active || !payload?.length) return null;
+  return (
+    <div data-testid="range-tooltip" style={tooltipBoxStyle}>
+      {payload[0]!.payload.title}
+    </div>
+  );
+}
+
+/**
  * Renders a single-series min–max band chart (per-band mean bars with
  * min–max ErrorBar whiskers) via recharts: y min/max ticks, one direct
  * HTML label on the last mean, per-band native <title> tooltip.
@@ -197,7 +230,10 @@ export function RangeBandChart(props: RangeBandChartProps): JSX.Element | null {
           tick={axisTickStyle}
           width={34}
         />
-        <Tooltip />
+        <Tooltip
+          content={<BandTooltip />}
+          cursor={{ fill: "var(--surface-lifted)" }}
+        />
         <Bar
           dataKey="mean"
           fill="var(--accent-teal)"

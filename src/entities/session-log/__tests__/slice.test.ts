@@ -15,6 +15,7 @@ import {
   selectTrackedExercises,
 } from "../index";
 import { SESSION_LOG_SAMPLE } from "../sample";
+import type { SessionLogEntry } from "../types";
 
 describe("entities/session-log estimateOneRepMax", () => {
   it("uses Epley rounded to 1 decimal", () => {
@@ -301,5 +302,40 @@ describe("entities/session-log selectExerciseFocus — sample pins", () => {
       .toEqual(selectExerciseFocus(SESSION_LOG_SAMPLE, "barbell-bench-press"));
     expect(selectTrackedExercises([...SESSION_LOG_SAMPLE].reverse()))
       .toEqual(selectTrackedExercises(SESSION_LOG_SAMPLE));
+  });
+});
+
+describe("entities/session-log selectExerciseFocus — full 4-week window (plan §6.2 upper boundary)", () => {
+  /* Four Bench sessions, exactly one per weekly bucket: with to = 2026-11-25
+     and from = 2026-10-29 (A3 window), the buckets start 2026-10-29,
+     2026-11-05, 2026-11-12, 2026-11-19 and each holds one session
+     (11-04, 11-11, 11-18, 11-25). Epley: 80×8 → 101.3, 82.5×8 → 104.5,
+     85×8 → 107.7, 90×8 → 114.0 kg; tonnage = w×8×4. */
+  const FOUR_BUCKET_FIXTURE: SessionLogEntry[] = [
+    { id: "s-2026-11-04-upper", date: "2026-11-04", split: "Upper", durationMin: 60,
+      sets: [{ exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 80, reps: 8, sets: 4 }] },
+    { id: "s-2026-11-11-upper", date: "2026-11-11", split: "Upper", durationMin: 60,
+      sets: [{ exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 82.5, reps: 8, sets: 4 }] },
+    { id: "s-2026-11-18-upper", date: "2026-11-18", split: "Upper", durationMin: 60,
+      sets: [{ exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 85, reps: 8, sets: 4 }] },
+    { id: "s-2026-11-25-upper", date: "2026-11-25", split: "Upper", durationMin: 60,
+      sets: [{ exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 90, reps: 8, sets: 4 }] },
+  ];
+
+  it("4 populated buckets → 4 e1RM points and 4 volume bands, one session each", () => {
+    const focus = selectExerciseFocus(FOUR_BUCKET_FIXTURE, "barbell-bench-press")!;
+    expect(focus.weekCount).toBe(4);
+    expect(focus.e1rmPoints).toEqual([
+      { weekStart: "2026-10-29", valueKg: 101.3, sessionCount: 1 },
+      { weekStart: "2026-11-05", valueKg: 104.5, sessionCount: 1 },
+      { weekStart: "2026-11-12", valueKg: 107.7, sessionCount: 1 },
+      { weekStart: "2026-11-19", valueKg: 114,   sessionCount: 1 },
+    ]);
+    expect(focus.volumeBands).toEqual([
+      { weekStart: "2026-10-29", minVolumeKg: 2560, maxVolumeKg: 2560, meanVolumeKg: 2560, sessionCount: 1 },
+      { weekStart: "2026-11-05", minVolumeKg: 2640, maxVolumeKg: 2640, meanVolumeKg: 2640, sessionCount: 1 },
+      { weekStart: "2026-11-12", minVolumeKg: 2720, maxVolumeKg: 2720, meanVolumeKg: 2720, sessionCount: 1 },
+      { weekStart: "2026-11-19", minVolumeKg: 2880, maxVolumeKg: 2880, meanVolumeKg: 2880, sessionCount: 1 },
+    ]);
   });
 });
