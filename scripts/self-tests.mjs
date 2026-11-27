@@ -961,6 +961,33 @@ await exhibit('ST-36', 'eval-all: one CLI, honest aggregate verdict (skip is not
   assert(cr.status === 1 && /FAIL/.test(cr.stdout + cr.stderr), `CLI red: ${cr.status} ${cr.stdout}${cr.stderr}`);
 });
 
+// ST-37 CLOSED-CLASS HOP FAILURE (master 27.11): a failed hop whose circle
+// later succeeded through resume/PASS is INFO, not ERROR. Tests cross ONLY
+// the agreed seam: classifyHopFailure(failure, runs), literal runs, no FS.
+await exhibit('ST-37', 'doctor: closed hop failures become info; open ones stay error', async () => {
+  const { classifyHopFailure } = await import(pathToFileURL(join(KIT, 'scripts', 'closed-failures.mjs')).href);
+  const failed = { rid: '2026-11-25T14-15-00__biometrics', name: 'biometrics', role: 'developer', exit: 1 };
+  // (a) same name, LATER run, same role green -> closed -> info
+  const closedRuns = [
+    { rid: failed.rid, name: 'biometrics', events: [{ event: 'hop_end', role: 'developer', exit: 1 }] },
+    { rid: '2026-11-25T16-00-00__resume-biometrics', name: 'resume-biometrics', events: [{ event: 'hop_end', role: 'developer', exit: 0 }] },
+  ];
+  const a = classifyHopFailure(failed, closedRuns);
+  assert(a.sev === 'info', 'a later successful resume must close the failure (info)');
+  assert(/closed/i.test(a.note), 'the closing proof must be named');
+  // (b) no later success -> still error
+  const openRuns = [{ rid: failed.rid, name: 'biometrics', events: [{ event: 'hop_end', role: 'developer', exit: 1 }] }];
+  const b = classifyHopFailure(failed, openRuns);
+  assert(b.sev === 'error', 'an unclosed hop failure must stay error');
+  // (c) earlier success does NOT close it (time direction matters)
+  const earlierRuns = [
+    { rid: '2026-11-25T13-00-00__biometrics', name: 'biometrics', events: [{ event: 'hop_end', role: 'developer', exit: 0 }] },
+    ...openRuns,
+  ];
+  const c = classifyHopFailure(failed, earlierRuns);
+  assert(c.sev === 'error', 'an earlier success cannot close a later failure');
+});
+
 const green = results.filter((r) => r.ok);
 const red = results.filter((r) => !r.ok && !r.pending && !r.skip);
 const pend = results.filter((r) => !r.ok && r.pending);

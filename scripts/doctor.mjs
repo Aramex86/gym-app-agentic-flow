@@ -10,6 +10,7 @@
 import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { classifyHopFailure } from "./closed-failures.mjs";
 
 const ROOT = process.cwd();
 // round-9 §2: LAZY base — reads .env-load time env (budget/trace pattern), not the eager module-top const.
@@ -31,6 +32,21 @@ const F = (sev, title, detail) => findings.push({ sev, title, detail });
 // (exit 1/2 = deliverable or machine-gate failure, 124 = timeout); warn =
 // hygiene, cost blindness, human kill (130); info = decisions and pointers.
 const SEV = (exit) => (exit === 1 || exit === 2 || exit === 124 ? "error" : "warn");
+
+// CLOSED-CLASS LAW (27.11): read every run first, then classify a failed
+// hop against LATER runs of the same circle — a later green/PASS closes it.
+const allRuns = [];
+for (const rid of runs) {
+  const p0 = join(runsBase(), rid, "trace.jsonl");
+  if (!existsSync(p0)) continue;
+  const evs0 = [];
+  for (const l of readFileSync(p0, "utf8").split("\n").map((x) => x.trim())) {
+    if (!l) continue;
+    try { const o = JSON.parse(l); if (o && typeof o === "object") evs0.push(o); } catch {}
+  }
+  const start0 = evs0.find((e) => e.event === "circle_start");
+  allRuns.push({ rid, name: start0?.name || start0?.task || rid, events: evs0 });
+}
 
 for (const rid of runs) {
   const p = join(runsBase(), rid, "trace.jsonl");
@@ -58,8 +74,14 @@ for (const rid of runs) {
     const key = `${e.role}|${e.exit}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    F(SEV(e.exit), "hop failure",
-      `${rid} · role=${e.role || "?"} model=${e.model || "?"} exit=${e.exit}${e.duration_ms ? ` ${Math.round(e.duration_ms / 1000)}s` : ""}`);
+    const detail = `${rid} · role=${e.role || "?"} model=${e.model || "?"} exit=${e.exit}${e.duration_ms ? ` ${Math.round(e.duration_ms / 1000)}s` : ""}`;
+    const start = events.find((x) => x.event === "circle_start");
+    const verdict = classifyHopFailure(
+      { rid, name: start?.name || start?.task || rid, role: e.role, exit: e.exit },
+      allRuns,
+    );
+    F(verdict.sev, verdict.sev === "info" ? "closed hop failure" : "hop failure",
+      `${detail} — ${verdict.note}`);
   }
 
   // gates: N decisions mean the human stopped the circle there — log, not blame
