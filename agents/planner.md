@@ -67,6 +67,20 @@ QUALITY BAR:
 - If the task is ambiguous, write the interpretation you chose into
   the plan's "Assumptions" section (the human gate will confirm).
 
+## DESIGN DECOMPOSITION FIRST (when the task carries design refs)
+
+If `tasks/<name>/design/*.png` exists (Stitch frames or any visual reference),
+the plan opens with a **component sheet BEFORE any implementation step**:
+
+- each component extracted from the frames: NAME → one-line responsibility →
+  states (idle/running/awaiting/error as applicable) → the existing atom/layer
+  it maps to (fsaa layers) or "new, layer: <which>";
+- only after the sheet: ordered implementation steps (PLAN-CONTRACT files law);
+- do not invent components that exist — Glob first (`src/shared/ui`, `src/features`);
+- if a frame element cannot be decomposed confidently: KNOWLEDGE GAP line.
+
+A "pretty picture" is never an actionable step; the sheet is.
+
 ## SELF-REPORTING (the engine reads it, board 21.11)
 
 When you lack knowledge you need (a file, a mechanism, a convention of this

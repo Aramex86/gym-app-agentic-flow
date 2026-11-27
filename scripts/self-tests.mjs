@@ -605,9 +605,9 @@ await exhibit('ST-22', 'verdict verification: engine re-runs passport gates, red
   // safe: `fn` is extracted from the kit's OWN engine source (same trust
   // root as ST-1's new-Function slice pattern) - no external input reaches
     // the body string.
-  const lawStart = s.indexOf('const verifyVerdict');
-  const lawEnd = s.indexOf('\n};', lawStart) + 2; // includes the closing '};'
-  const fn = s.slice(lawStart, lawEnd);
+  const lawStart = s.indexOf('function verifyVerdict');
+  const lawEnd = s.indexOf('\n}', lawStart) + 2; // includes the closing '}'
+  const fn = s.slice(lawStart, lawEnd) + '\nverifyVerdict;';
   const mk = (testCmd, lintCmd) => {
     const d = mkdtempSync(join(tmpdir(), 'st22-'));
     mkdirSync2(join(d, 'docs'), { recursive: true });
@@ -621,7 +621,7 @@ await exhibit('ST-22', 'verdict verification: engine re-runs passport gates, red
     spawnSync: ss,
     trace: { ev: () => {} },
   };
-  const mkFn = new Function('getProfile', 'spawnSync', 'trace', 'process', 'exit', `${fn}; return verifyVerdict;`);
+  const mkFn = new Function('getProfile', 'spawnSync', 'trace', 'process', 'exit', fn.replace('function verifyVerdict', 'var verifyVerdict = function verifyVerdict') + ';\nreturn verifyVerdict;');
   const vv = mkFn(deps.getProfile, deps.spawnSync, deps.trace, process, (code, msg) => { throw new Error(`exit(${code}): ${msg || ''}`); });
   // a) green gates -> ok
   const ok = vv(mk('node -e "process.exit(0)"', 'node -e "process.exit(0)"'), 'r1');
@@ -817,3 +817,13 @@ if (red.length) {
   process.exit(1);
 }
 
+
+// ST-29 GATE-INPUT LAW (born from the 25.11 combat crash, $2.95): the
+// interactive Y-gates flow through `input` (node:process stdin) — the
+// import MUST exist or the circle dies at the FIRST gate after paying.
+await exhibit('ST-29', 'flow imports stdin for the Y-gate ask() — never dies after a paid hop', () => {
+  const s = src('scripts/flow.mjs');
+  assert(s.includes('stdin as input'), 'stdin import present (Y-gate stdin bridge)');
+  assert(/import \{ stdin as input, stdout as output \} from ['"]node:process['"]/.test(s), 'the import line is the process-stdin one');
+  assert(s.includes('input.readableEnded'), 'ask() guards EOF via input.readableEnded');
+});
