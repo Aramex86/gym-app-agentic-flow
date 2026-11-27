@@ -77,6 +77,18 @@ describe("shared/ui atoms TrajectoryChart — behavior", () => {
     expect(html).toContain("var(--surface)");
     expect(html).toContain("var(--font-metric)");
   });
+
+  it("hover tooltip layer is token-styled (source pin — the box only mounts on real hover)", () => {
+    // WHY the source pin, not a DOM pin: recharts mounts the tooltip box in
+    // response to pointer move over the wrapper, which jsdom does not drive
+    // deterministically for every run; the source guard rejects any
+    // regression to the light-themed default box. The behavioral guarantee
+    // stays with the native <title> assertions above.
+    expect(trajectoryChartSource).toContain("var(--surface-lifted)"); // box
+    expect(trajectoryChartSource).toContain("var(--edge)"); // box border + cursor
+    expect(trajectoryChartSource).toContain("var(--text-high)"); // item ink
+    expect(trajectoryChartSource).toContain("var(--text-muted)"); // label ink
+  });
 });
 
 describe("shared/ui atoms TrajectoryChart — source guards (ADR-0001 D5)", () => {

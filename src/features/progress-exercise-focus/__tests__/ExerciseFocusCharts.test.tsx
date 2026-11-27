@@ -146,6 +146,42 @@ describe("features progress-exercise-focus — fewer than 4 weeks", () => {
   });
 });
 
+describe("features progress-exercise-focus — full 4-week window (plan §6.2)", () => {
+  /* Same 4-bucket fixture the entity test pins (plan §6.2): one Bench
+     session per weekly bucket, window to = 2026-11-25 → bucket starts
+     2026-10-29 / 11-05 / 11-12 / 11-19. All data flows through the entity
+     selectors already proven by slice.test.ts. */
+  const FOUR_BUCKET_FIXTURE: SessionLogEntry[] = [
+    { id: "s-2026-11-04-upper", date: "2026-11-04", split: "Upper", durationMin: 60,
+      sets: [{ exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 80, reps: 8, sets: 4 }] },
+    { id: "s-2026-11-11-upper", date: "2026-11-11", split: "Upper", durationMin: 60,
+      sets: [{ exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 82.5, reps: 8, sets: 4 }] },
+    { id: "s-2026-11-18-upper", date: "2026-11-18", split: "Upper", durationMin: 60,
+      sets: [{ exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 85, reps: 8, sets: 4 }] },
+    { id: "s-2026-11-25-upper", date: "2026-11-25", split: "Upper", durationMin: 60,
+      sets: [{ exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 90, reps: 8, sets: 4 }] },
+  ];
+
+  it("renders all 4 weekly points and NO incomplete hint at the full window", () => {
+    vi.stubGlobal("fetch", fetchSpy);
+    const { container } = render(
+      <ExerciseFocusCharts entries={FOUR_BUCKET_FIXTURE} onCompose={vi.fn()} />,
+    );
+
+    // "4 points, weekly": one dot per populated bucket, at most 4 — and a
+    // rising 90×8 last point (e1RM 114 kg).
+    expect(trajectoryPoints(container).length).toBe(4);
+    expect(lastTrajectoryLabel(container)).toContain("114");
+    // 4 of 4 weeks → the hint disappears exactly at the full window.
+    expect(screen.queryByText(/weeks tracked/)).toBeNull();
+    // One series per chart; the figcaptions name each series.
+    expect(screen.getByText("4-week 1RM trajectory · Bench Press")).toBeTruthy();
+    expect(screen.getByText("Volume dispersion · Bench Press")).toBeTruthy();
+    // Volume top edge of the last (heaviest) week: 90×8×4.
+    expect(lastVolumeLabel(container)).toBe("2880 kg");
+  });
+});
+
 describe("features progress-exercise-focus — empty state + composer CTA", () => {
   it("entries=[] → EmptyState + CTA, no chart, ZERO fetch calls", () => {
     vi.stubGlobal("fetch", fetchSpy);

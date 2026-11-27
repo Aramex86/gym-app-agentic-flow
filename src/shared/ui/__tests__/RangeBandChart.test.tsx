@@ -89,6 +89,22 @@ describe("shared/ui atoms RangeBandChart — behavior", () => {
     // WHY no var(--surface) pin: the surface-stroked mean dot circle is
     // gone — plan v2 §4 replaces it with the Bar itself as the marker.
   });
+
+  it("hover tooltip: token-styled custom content, never the raw bandError tuple", () => {
+    /* WHY the source pin, not a DOM pin: recharts mounts the tooltip only in
+       response to real pointer state (proven in-session: a synthetic
+       mouseMove over .recharts-wrapper never mounts <BandTooltip/> in
+       jsdom), so a DOM hover assertion cannot be made deterministic here —
+       plan §6.1 explicitly says keep the source pin in that case and do not
+       ship a flaky test. The behavioral guarantee stays with the native
+       <title> assertions above. */
+    expect(rangeBandChartSource).toContain('data-testid="range-tooltip"');
+    expect(rangeBandChartSource).toContain("var(--surface-lifted)"); // box + cursor fill
+    expect(rangeBandChartSource).toContain("var(--edge)"); // box border
+    // The custom content renders the pre-format title, NOT the internal
+    // bandError whisker offsets the default tooltip would leak as a row.
+    expect(rangeBandChartSource).toContain("payload.title");
+  });
 });
 
 describe("shared/ui atoms RangeBandChart — source guards (ADR-0001 D5)", () => {
