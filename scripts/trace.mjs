@@ -168,7 +168,7 @@ export function show(idIn) {
   for (const r of rows) {
     const e = r.event;
     if (e === 'hop_end') {
-      console.log(`  HOP ${r.role}  ${r.model || ''} -> exit ${r.exit}  ${Math.round((r.duration_ms || 0) / 1000)}s  ${r.artifact || '-'}${r.note ? '  (' + r.note + ')' : ''}`);
+      console.log(`  HOP ${r.role}  ${r.model || ''} -> exit ${r.exit}  ${Math.round((r.duration_ms || 0) / 1000)}s  ${r.artifact || '-'}${r.tools_used ? '  tools_used=' + r.tools_used.join(',') : ''}${r.note ? '  (' + r.note + ')' : ''}`);
     } else if (e === 'gate') {
       console.log(`  GATE ${r.gate}: ${r.result}`);
     } else if (e === 'verdict') {

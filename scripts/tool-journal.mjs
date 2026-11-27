@@ -63,6 +63,11 @@ export function auditTools(rows, opts = {}) {
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+/** Unique, sorted tool names actually called in the hop (allowed + errors). */
+export function toolsUsed(rows) {
+  return [...new Set((rows || []).map((r) => r?.tool).filter(Boolean))].sort();
+}
+
 export function journalFromTranscript(text, opts = {}) {
   const rows = String(text || "").split("\n").map((l) => {
     try { return JSON.parse(l); } catch { return null; }

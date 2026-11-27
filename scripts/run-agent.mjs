@@ -13,7 +13,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { loadEnv } from "./env.mjs";
 import { missingCliMessage } from "./cli-preflight.mjs";
-import { journalFromTranscript, appendJournal } from './tool-journal.mjs';
+import { journalFromTranscript, appendJournal, toolsUsed } from './tool-journal.mjs';
+import { offloadContent, windowUsage } from './context-hygiene.mjs';
 import { getProfile } from './profile.mjs';
 import { ev, snap, promptSnap, hopTail, reportDigest, readLatestUsage } from './trace.mjs';
 loadEnv();    // reads repo .env (PIPELINE_CLI, OLLAMA_*, RUN_MODEL)  system env wins
@@ -141,13 +142,37 @@ const inFile = inFlag || process.env.AGENT_IN;    // optional: task/plan file pa
 const inFileTxt = inFile && existsSync(inFile) ? `\n\nINPUT FILE (${inFile}):\n${readFileSync(inFile, 'utf8')}` : '';
 const out = outFlag || autoOut || process.env.AGENT_OUT;  // expected artifact; verified after run
 
+// CONTEXT HYGIENE (2.6): offload oversized engine-fed context (in-file / ctx)
+// to an artifact; keep head+tail+path inline. The role contract is never
+// offloaded. Full body is written under the run's artifacts dir on demand.
+const hygienePath = (label) => {
+  const rid = process.env.PIPELINE_RUN_ID || null;
+  return rid ? `.pipeline/runs/${rid}/artifacts/context-${role}-${label}.txt` : null;
+};
+function hygiene(text, label) {
+  const path = hygienePath(label);
+  const result = offloadContent(text, {
+    maxTokens: Number(process.env.PIPELINE_OFFLOAD_TOKENS) || 20000,
+    label, path: path || undefined,
+  });
+  if (result.offloaded && path) {
+    try {
+      const abs = path.join(process.cwd(), path);
+      mkdirSync(path.dirname(abs), { recursive: true });
+      writeFileSync(abs, String(text));
+    } catch (err) { console.error('[run-agent] context offload write failed: ' + (err?.message || err)); }
+  }
+  return result.text;
+}
+const safeCtx = hygiene(ctx, 'ctx');
+const safeInFile = inFileTxt ? hygiene(inFileTxt, 'infile') : '';
 const outDirective = out ? `\nOUTPUT PATH (write the artifact EXACTLY here - do not add dates or rename):\n${out}` : '';
 
 // mkdir law (17.11): fresh worktrees lack docs/plans ( artifacts are untracked )
 // -> pre-create the artifact directory before the hop spawns (combat: plan fell into session-state)
 if (out) {
   try { mkdirSync(path.dirname(path.join(process.cwd(), out)), { recursive: true }); } catch {}
-}const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${ctx}${inFileTxt}${outDirective}`;
+}const prompt = `${getRoleFile(role)}\n\nCONTEXT:\n${safeCtx}${safeInFile}${outDirective}`;
 
 // --- spawn CLI ---
 const cli = process.env.PIPELINE_CLI; // ADR-0002: default set above (claude); no silent opencode
@@ -475,9 +500,20 @@ console.log(rc(`[run-agent] waiting for ${cli} (output also in .pipeline-last-ru
 // never beat the auto name derived from the current input)
 if (runIsAsync) {
   const code = await runClaudeLive(argv, env, prompt);
+  // TOOLS_USED PROPERTY (master 27.11): read the hop's transcript once, right
+  // after the CLI returns, so hop_end can carry the tools the agent called.
+  // Never fatal: an unreadable transcript simply omits the property.
+  let jrRows = null, tools_used = null;
+  try {
+    const u0 = readLatestUsage(cwdNow, T0 - 2000);
+    if (u0?.transcript) {
+      jrRows = journalFromTranscript(readFileSync(u0.transcript, 'utf8'), { role }).rows;
+      tools_used = toolsUsed(jrRows);
+    }
+  } catch (err) { console.error('[run-agent] tools_used skipped: ' + (err?.message || err)); }
   if (RID) {
     snap(RID, out);
-    ev(RID, { event: 'hop_end', role, model, cwd: cwdNow, branch, exit: code ?? 1, duration_ms: Date.now() - T0, artifact: (out && existsSync(out)) ? out : null, note: (code === 130) ? 'kill-switch' : (code === 124 ? 'timeout' : undefined) });
+    ev(RID, { event: 'hop_end', role, model, cwd: cwdNow, branch, exit: code ?? 1, duration_ms: Date.now() - T0, artifact: (out && existsSync(out)) ? out : null, tools_used: tools_used || undefined, note: (code === 130) ? 'kill-switch' : (code === 124 ? 'timeout' : undefined) });
     hopTail(RID, role, LOG_PATH);                                   // v3: keep stdout tail for forensics
     // KNOWLEDGE GAP WRITER (board 21.11, round-8 R7-2): the reader side (doctor/
     // adlc) shipped before the writer. Hops flag gaps by writing lines
@@ -532,14 +568,17 @@ if (runIsAsync) {
       if (used) {
         const u = used;
         ev(RID, { event: 'hop_usage', role, model, msgs: u.msgs, input_tokens: u.input_tokens, output_tokens: u.output_tokens, cache_read: u.cache_read, cost_usd: u.cost_usd != null ? u.cost_usd : null, source: u.cost_usd != null ? 'stdout' : 'transcript' });
+        const w = windowUsage({ input_tokens: u.input_tokens, cache_read: u.cache_read }, { window: Number(process.env.PIPELINE_CONTEXT_WINDOW) || 200000 });
+        ev(RID, { event: 'window_usage', role, model, used: w.used, pct: Number(w.pct.toFixed(4)), warn: w.warn });
+        if (w.warn) console.error(rc(`[run-agent] WINDOW WARNING ${role}: ${w.used}/${w.window} tokens (${(w.pct * 100).toFixed(1)}%) — near context limit`));
         // TOOL AUDIT JOURNAL (2.8): post-hop transcript -> tools.jsonl in
         // this run. Zero deps, no model calls; a parse failure is never
         // fatal (the hop already succeeded).
         if (u.transcript && RID) {
           try {
-            const jr = journalFromTranscript(readFileSync(u.transcript, 'utf8'), { role });
+            const rowsToWrite = jrRows || journalFromTranscript(readFileSync(u.transcript, 'utf8'), { role }).rows;
             const base = process.env.PIPELINE_TRACE_BASE || process.cwd();
-            appendJournal(path.join(base, RID), jr.rows);
+            appendJournal(path.join(base, RID), rowsToWrite);
           } catch (err) { console.error('[run-agent] tool-journal skipped: ' + (err && err.message || err)); }
         }
         console.log(rc(`[run-agent] tokens ${role}: in ${u.input_tokens + (u.cache_read || 0)} / out ${u.output_tokens} (${u.msgs} api msgs)${u.cost_usd != null ? ' · $' + u.cost_usd.toFixed(4) : ''}`));

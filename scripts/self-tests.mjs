@@ -1018,6 +1018,52 @@ await exhibit('ST-38', 'tool-journal: tool_use/denied rows from transcript, non-
   assert(src('scripts/run-agent.mjs').includes('tool-journal'), 'run-agent does not produce the journal');
 });
 
+// ST-39 TOOLS_USED PROPERTY (master 27.11): trace hop_end carries the
+// tools the agent really called in that hop. Pure seam: toolsUsed(rows).
+await exhibit('ST-39', 'trace: hop_end carries tools_used from the journal', async () => {
+  const { toolsUsed } = await import(pathToFileURL(join(KIT, 'scripts', 'tool-journal.mjs')).href);
+  const rows = [
+    { kind: 'allowed', tool: 'Bash' },
+    { kind: 'allowed', tool: 'Read' },
+    { kind: 'error', tool: 'Bash' },
+    { kind: 'allowed', tool: 'Read' },
+  ];
+  assert(JSON.stringify(toolsUsed(rows)) === JSON.stringify(['Bash','Read']), 'unique sorted tool names, errors included');
+  assert(src('scripts/run-agent.mjs').includes('tools_used'), 'run-agent does not emit tools_used on hop_end');
+  assert(src('scripts/trace.mjs').includes('tools_used'), 'trace show does not render tools_used');
+});
+
+// ST-40 CONTEXT HYGIENE OFFLOAD (master 27.11, Phase-4 2.6): big external
+// context -> head+tail+path, so the model never swallows 20K tokens of input
+// at once. Pure seam: offloadContent(text, opts).
+await exhibit('ST-40', 'context hygiene: >20K context offloaded to file, small stays inline', async () => {
+  const { offloadContent, estimateTokens } = await import(pathToFileURL(join(KIT, 'scripts', 'context-hygiene.mjs')).href);
+  assert(estimateTokens('a'.repeat(4000)) === 1000, 'honest chars/4 token estimate');
+  const small = offloadContent('short context', { maxTokens: 20 });
+  assert(!small.offloaded && small.text === 'short context', 'small content stays inline');
+  const body = 'HEAD_MARK ' + 'x'.repeat(120000) + ' TAIL_MARK';
+  const big = offloadContent(body, { maxTokens: 20, label: 'task' });
+  assert(big.offloaded, 'big content offloaded');
+  assert(big.text.includes('HEAD_MARK') && big.text.includes('TAIL_MARK'), 'head+tail kept');
+  assert(big.text.includes('task') && /OFFLOAD/.test(big.text), 'label and OFFLOAD marker present');
+  assert(big.text.length < body.length / 100, 'returned text is a digest, not the full body');
+  assert(big.fullChars === body.length, 'original size reported honestly');
+  assert(src('scripts/run-agent.mjs').includes('offloadContent'), 'run-agent does not apply the offload gate');
+});
+
+// ST-41 WINDOW TELEMETRY (master 27.11): hop context-window use is measured
+// honestly and warns BEFORE a death. Pure seam: windowUsage(usage).
+await exhibit('ST-41', 'window telemetry: input+cache counted, pct honest, warn threshold', async () => {
+  const { windowUsage } = await import(pathToFileURL(join(KIT, 'scripts', 'context-hygiene.mjs')).href);
+  const a = windowUsage({ input_tokens: 30194, cache_read: 163840 }, { window: 200000 });
+  assert(a.used === 194034, 'input + cache_read counted, not just input');
+  assert(Math.abs(a.pct - 0.97017) < 0.001, 'pct of window is honest');
+  assert(a.warn === true, 'near-full window warns before the hop dies');
+  const b = windowUsage({ input_tokens: 1000, cache_read: 0 }, { window: 200000 });
+  assert(b.warn === false && b.pct < 0.01, 'small usage does not warn');
+  assert(src('scripts/run-agent.mjs').includes('window_usage'), 'run-agent does not emit window telemetry');
+});
+
 const green = results.filter((r) => r.ok);
 const red = results.filter((r) => !r.ok && !r.pending && !r.skip);
 const pend = results.filter((r) => !r.ok && r.pending);
