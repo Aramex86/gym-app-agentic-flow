@@ -426,7 +426,12 @@ function ensureWorktree(name) {
     console.log(`deps: ${getProfile(process.cwd()).install} in sandbox ...`);
     // passport-driven (1.2): the install command comes from the project
     // passport (docs/factory-profile.md), pnpm default otherwise.
-    const installParts = (getProfile(process.cwd()).install || "").split(/\s+/);
+    // "none" = the project declares zero deps (e.g. the kit itself) — skip.
+    const installCmd = (getProfile(process.cwd()).install || "").trim();
+    if (/^none$/i.test(installCmd)) {
+      console.log("deps: none — zero-dep project, skipping install step");
+    } else {
+    const installParts = installCmd.split(/\s+/);
     const pi = installParts.length
       ? spawnSync(installParts[0], installParts.slice(1), {
           cwd: wt,
@@ -444,6 +449,7 @@ function ensureWorktree(name) {
       );
       process.exit(1);
     }
+    } // end install skip guard
   }
   return wt;
 }

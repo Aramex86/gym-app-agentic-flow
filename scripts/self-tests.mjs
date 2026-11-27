@@ -28,6 +28,12 @@ const snap = (text, from, to) => {
 };
 const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
 
+// WHY: sandbox hygiene (not a law change) — a leaked PIPELINE_TRACE_BASE from
+// the surrounding shell shadows the cwd-based fixtures (ST-20's tui --once
+// frame) and doctor's real-run probe; on a clean machine this delete is a
+// no-op, since every exhibit that needs a base sets its own.
+delete process.env.PIPELINE_TRACE_BASE;
+
 const results = [];
 async function exhibit(id, title, fn, opts = {}) {
   const t0 = Date.now();
@@ -1064,6 +1070,151 @@ await exhibit('ST-41', 'window telemetry: input+cache counted, pct honest, warn 
   assert(src('scripts/run-agent.mjs').includes('window_usage'), 'run-agent does not emit window telemetry');
 });
 
+// ST-42 / ST-43 UI CONSOLE (Stage 1 Observe, ADR-0009/0010). scripts/ui.mjs
+// is a zero-dep single-file HTTP server with fully inlined HTML/CSS/JS.
+// ST-42 proves the source laws + the honest empty state; ST-43 proves live
+// trace -> hops/ledger/stats + the ONE write the console owns: the human
+// gate answer file (.pipeline/gates/<run>.answer, byte-exact 'Y\n').
+// ADR-0010 forbids agents running the console interactively — these exhibits
+// spawn it on an EPHEMERAL port (UI_PORT=0) and kill it in finally.
+// Placement: both exhibits sit BEFORE the summary block so the tally counts them.
+// ------------------------------------------------------------------
+const httpl = await import('node:http');
+// startUi: spawn ui.mjs on an ephemeral port in the given base; resolves when
+// the honest listen line prints the ACTUAL bound port.
+const startUi = (base, env = {}) => new Promise((resolve, reject) => {
+  const p = spawn(process.execPath, [join(KIT, 'scripts', 'ui.mjs')], {
+    cwd: base,
+    env: { ...process.env, UI_PORT: '0', PIPELINE_TRACE_BASE: base, PIPELINE_BUDGET_USD: '', ...env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let out = '';
+  const timer = setTimeout(() => { p.kill(); reject(new Error('ui start timeout: ' + out)); }, 5000);
+  p.stdout.on('data', (d) => {
+    out += d.toString();
+    const m = out.match(/http:\/\/127\.0\.0\.1:(\d+)/);
+    if (m) { clearTimeout(timer); resolve({ p, port: Number(m[1]), out }); }
+  });
+  p.on('exit', (code) => { clearTimeout(timer); reject(new Error('ui exited ' + code + ': ' + out)); });
+});
+// httpGet / httpPost: tiny zero-dep probe returning {status, headers, body}.
+const httpGet = (port, path) => new Promise((resolve, reject) => {
+  const req = httpl.request({ host: '127.0.0.1', port, path, method: 'GET' }, (res) => {
+    let b = '';
+    res.on('data', (d) => { b += d.toString(); });
+    res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: b }));
+  });
+  req.on('error', reject);
+  req.end();
+});
+const httpPost = (port, path, body) => new Promise((resolve, reject) => {
+  const data = JSON.stringify(body);
+  const req = httpl.request({ host: '127.0.0.1', port, path, method: 'POST',
+    headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) } }, (res) => {
+    let b = '';
+    res.on('data', (d) => { b += d.toString(); });
+    res.on('end', () => resolve({ status: res.statusCode, body: b }));
+  });
+  req.on('error', reject);
+  req.write(data);
+  req.end();
+});
+
+await exhibit('ST-42', 'ui console: embedded HTML, zero-dep server, honest empty state', async () => {
+  if (process.platform === 'win32') throw new Error('SKIP (win32): ephemeral-port spawn verified on POSIX runs');
+  // source laws: zero npm deps, one file, embedded doc, no external assets
+  const s = src('scripts/ui.mjs');
+  assert(!/from\s+'(?!node:)/.test(s), 'zero-dep law: a non-node import reached ui.mjs');
+  assert(!/require\s*\(/.test(s), 'zero-dep law: require() in ui.mjs');
+  assert(s.includes('<!doctype html>'), 'embedded HTML lost');
+  assert(!/<script[^>]+src=/.test(s), 'external <script src> found');
+  assert(!/<link[^>]+href=/.test(s), 'external <link href> found');
+  assert(!/@import\s+url\(/.test(s), '@import url() found');
+  assert(s.includes('process.env.UI_PORT') && s.includes('1921') && s.includes('127.0.0.1') && s.includes('EADDRINUSE'), 'port/loopback/EADDRINUSE laws lost');
+  // boot on an ephemeral port in an EMPTY base
+  const base = mkdtempSync(join(tmpdir(), 'ui30-'));
+  const h = await startUi(base);
+  try {
+    const home = await httpGet(h.port, '/');
+    assert(home.status === 200, 'GET / not 200, got ' + home.status);
+    assert(String(home.headers['content-type']).includes('text/html'), 'content-type not text/html');
+    for (const piece of ['<!doctype html', 'id="hop-list"', 'id="trace-lines"', 'id="btn-approve"', 'AUTO-SCROLL'])
+      assert(home.body.includes(piece), 'embedded doc missing ' + piece);
+    // honest empty state: no .pipeline anywhere
+    const st = JSON.parse((await httpGet(h.port, '/api/state')).body);
+    assert(st.run === null, 'no-run state must be null, got ' + JSON.stringify(st.run));
+    assert(st.budget.value === 'unlimited' && st.budget.delta === 'NO CAP', 'unset cap must be unlimited (ADR-0004)');
+    assert(st.stats.runsToday === 0, 'empty base must count 0 runs today');
+    assert(st.hops.length === 4 && st.hops.every((x) => x.status === 'queued'), '4 honest queued hop slots expected');
+    const tr = JSON.parse((await httpGet(h.port, '/api/trace')).body);
+    assert(tr.run === null && tr.lines.length === 0 && tr.total === 0, 'trace empty state not honest');
+    assert((await httpGet(h.port, '/api/report?name=nope')).status === 400, 'unknown report name must 400');
+    assert((await httpGet(h.port, '/nope')).status === 404, 'unknown path must 404');
+  } finally {
+    h.p.kill('SIGTERM');
+  }
+});
+
+await exhibit('ST-43', 'ui console: live trace + hop timeline + gate answer file', async () => {
+  if (process.platform === 'win32') throw new Error('SKIP (win32): ephemeral-port spawn verified on POSIX runs');
+  // fixture: one run, 6 real-shape events, timestamps pinned to NOW (UTC
+  // day/month must match or today/monthCost would honestly be 0)
+  const base = mkdtempSync(join(tmpdir(), 'ui31-'));
+  const rid = '2026-11-27T18-00-00__ui-console-st';
+  const now = Date.now();
+  const evs = [
+    { event: 'circle_start', name: 'x' },
+    { event: 'hop_start', role: 'planner', model: 'kimi', cwd: base, branch: 'feat/x' },
+    { event: 'hop_end', role: 'planner', model: 'kimi', exit: 0, duration_ms: 1200, artifact: 'docs/plans/x-plan.md' },
+    { event: 'hop_usage', role: 'planner', model: 'kimi', msgs: 3, input_tokens: 100, output_tokens: 50, cache_read: 0, cost_usd: 0.25, source: 'stdout' },
+    { event: 'gate', gate: 'plan', result: 'Y' },
+    { event: 'verdict', result: 'PASS' },
+  ].map((e, i) => JSON.stringify({ ts: new Date(now + i * 1000).toISOString(), ...e }));
+  mkdirSync2(join(base, '.pipeline', 'runs', rid, 'logs'), { recursive: true });
+  wf(join(base, '.pipeline', 'runs', rid, 'trace.jsonl'), evs.join('\n') + '\n');
+  wf(join(base, '.pipeline', 'runs', rid, 'logs', 'planner-tail.log'), 'tail line\n');
+  wf(join(base, '.pipeline', 'diagnosis-report.md'), 'diagnosis fixture\n');
+  const h = await startUi(base);
+  try {
+    // 1) state: run, planner hop complete+tail+tools, others queued, ledger
+    const st = JSON.parse((await httpGet(h.port, '/api/state')).body);
+    assert(st.run === rid, 'latest run must win, got ' + st.run);
+    const planner = st.hops[0];
+    assert(planner.role === 'planner' && planner.status === 'complete' && planner.model === 'kimi', 'planner slot wrong: ' + JSON.stringify(planner));
+    assert(planner.durationMs === 1200 && planner.artifact === 'docs/plans/x-plan.md', 'planner duration/artifact lost');
+    assert(planner.tail && planner.tail.includes('tail line'), 'planner tail log lost');
+    assert(Array.isArray(planner.tools) && planner.tools.length > 0, 'allowed tools (capability, from agents/<role>.md) lost');
+    for (const hp of st.hops.slice(1)) assert(hp.status === 'queued', 'non-started role must be queued, got ' + hp.status);
+    assert(st.stats.runsToday === 1 && st.stats.errors === 0, 'daily stats wrong: ' + JSON.stringify(st.stats));
+    assert(st.monthCost.usd === 0.25, 'month cost must sum hop_usage, got ' + st.monthCost.usd);
+    assert(st.budget.value === 'unlimited', 'unset cap must stay unlimited');
+    // 2) trace pagination
+    const tr = JSON.parse((await httpGet(h.port, '/api/trace')).body);
+    assert(tr.total === 6 && tr.next === 6 && tr.lines.length === 6 && tr.lines[0].event === 'circle_start', 'trace shape wrong: ' + JSON.stringify({ total: tr.total, next: tr.next }));
+    const tr2 = JSON.parse((await httpGet(h.port, '/api/trace?since=4')).body);
+    assert(tr2.lines.length === 2 && tr2.lines[0].event === 'gate', '?since=4 must slice to the last 2 events');
+    // 3) the ONE write: gate answer file, byte-exact
+    const g = await httpPost(h.port, '/api/gate', { answer: 'Y' });
+    assert(g.status === 200, 'gate POST must 200, got ' + g.status + ' ' + g.body);
+    const ansPath = join(base, '.pipeline', 'gates', rid + '.answer');
+    assert(ex(ansPath) && readFileSync(ansPath, 'utf8') === 'Y\n', 'answer file must exist and read exactly Y+newline');
+    const st2 = JSON.parse((await httpGet(h.port, '/api/state')).body);
+    assert(st2.gate.answer === 'Y' && st2.gate.answerPath === '.pipeline/gates/' + rid + '.answer', 'gate answer not surfaced back');
+    // 4) walls: bad answer 400, traversal 400 (and nothing written), unknown run 404
+    assert((await httpPost(h.port, '/api/gate', { answer: 'X' })).status === 400, 'answer must be exactly Y or N');
+    assert((await httpPost(h.port, '/api/gate', { run: '../../etc', answer: 'Y' })).status === 400, 'path traversal must 400');
+    assert((await httpPost(h.port, '/api/gate', { run: 'nope', answer: 'Y' })).status === 404, 'unknown run must 404');
+    const gatesNow = readdirSync(join(base, '.pipeline', 'gates'));
+    assert(gatesNow.length === 1 && gatesNow[0] === rid + '.answer', 'traversal attempt must not create any answer file');
+    // 5) report drawer
+    const rp = JSON.parse((await httpGet(h.port, '/api/report?name=diagnosis')).body);
+    assert(rp.exists === true && rp.text.includes('diagnosis fixture'), 'diagnosis report not served');
+  } finally {
+    h.p.kill('SIGTERM');
+  }
+});
+
+// ------------------------------------------------------------------
 const green = results.filter((r) => r.ok);
 const red = results.filter((r) => !r.ok && !r.pending && !r.skip);
 const pend = results.filter((r) => !r.ok && r.pending);
