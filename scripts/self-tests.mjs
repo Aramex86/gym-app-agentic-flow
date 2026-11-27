@@ -988,6 +988,36 @@ await exhibit('ST-37', 'doctor: closed hop failures become info; open ones stay 
   assert(c.sev === 'error', 'an earlier success cannot close a later failure');
 });
 
+// ST-38 TOOL AUDIT JOURNAL (master 27.11, Phase-4 2.8): post-hop transcript
+// -> rows of tool calls (allowed/error) at the agreed pure seam. No FS in
+// the function; CLI uses a literal transcript adapter.
+await exhibit('ST-38', 'tool-journal: tool_use/denied rows from transcript, non-tool rows ignored', async () => {
+  const { auditTools, journalFromTranscript } = await import(pathToFileURL(join(KIT, 'scripts', 'tool-journal.mjs')).href);
+  const literal = [
+    { type: 'queue-operation', operation: 'enqueue' },
+    { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'u1', name: 'Bash', input: { command: 'pnpm lint' } }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'u1', is_error: true, content: 'permission denied' }] } },
+    { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'u2', name: 'Read', input: { file_path: 'src/a.ts' } }] } },
+  ];
+  const a = auditTools(literal, { role: 'tester' });
+  assert(a.rows.length === 3, 'two tool_use + one is_error = three rows; non-tool rows ignored');
+  assert(a.rows[0].kind === 'allowed' && a.rows[0].tool === 'Bash', 'tool_use -> allowed row with tool name');
+  assert(a.rows[1].kind === 'error' && a.rows[1].tool_use_id === 'u1', 'tool_result is_error -> linked error row');
+  assert(a.summary.allowed === 2 && a.summary.errors === 1, 'summary counts are honest');
+  assert(!/pnpm lint/.test(JSON.stringify(a.rows[1])), 'no leaked raw input into error row');
+  // CLI adapter: literal JSONL -> output file
+  const dir = mkdtempSync(join(tmpdir(), 'toolj-'));
+  const inp = join(dir, 'transcript.jsonl');
+  const out = join(dir, 'tools.jsonl');
+  wf(inp, literal.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  const cli = ss(process.execPath, ['scripts/tool-journal.mjs', inp, out], { cwd: KIT, encoding: 'utf8' });
+  assert(cli.status === 0, `tool-journal CLI failed: ${cli.stderr}`);
+  const lines = readFileSync(out, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert(lines.length === 3, 'CLI wrote all three rows to tools.jsonl');
+  // wiring: run-agent calls the journal when a transcript exists
+  assert(src('scripts/run-agent.mjs').includes('tool-journal'), 'run-agent does not produce the journal');
+});
+
 const green = results.filter((r) => r.ok);
 const red = results.filter((r) => !r.ok && !r.pending && !r.skip);
 const pend = results.filter((r) => !r.ok && r.pending);

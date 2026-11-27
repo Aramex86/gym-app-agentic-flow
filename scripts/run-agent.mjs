@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { loadEnv } from "./env.mjs";
 import { missingCliMessage } from "./cli-preflight.mjs";
+import { journalFromTranscript, appendJournal } from './tool-journal.mjs';
 import { getProfile } from './profile.mjs';
 import { ev, snap, promptSnap, hopTail, reportDigest, readLatestUsage } from './trace.mjs';
 loadEnv();    // reads repo .env (PIPELINE_CLI, OLLAMA_*, RUN_MODEL)  system env wins
@@ -531,6 +532,16 @@ if (runIsAsync) {
       if (used) {
         const u = used;
         ev(RID, { event: 'hop_usage', role, model, msgs: u.msgs, input_tokens: u.input_tokens, output_tokens: u.output_tokens, cache_read: u.cache_read, cost_usd: u.cost_usd != null ? u.cost_usd : null, source: u.cost_usd != null ? 'stdout' : 'transcript' });
+        // TOOL AUDIT JOURNAL (2.8): post-hop transcript -> tools.jsonl in
+        // this run. Zero deps, no model calls; a parse failure is never
+        // fatal (the hop already succeeded).
+        if (u.transcript && RID) {
+          try {
+            const jr = journalFromTranscript(readFileSync(u.transcript, 'utf8'), { role });
+            const base = process.env.PIPELINE_TRACE_BASE || process.cwd();
+            appendJournal(path.join(base, RID), jr.rows);
+          } catch (err) { console.error('[run-agent] tool-journal skipped: ' + (err && err.message || err)); }
+        }
         console.log(rc(`[run-agent] tokens ${role}: in ${u.input_tokens + (u.cache_read || 0)} / out ${u.output_tokens} (${u.msgs} api msgs)${u.cost_usd != null ? ' · $' + u.cost_usd.toFixed(4) : ''}`));
       }
     }
