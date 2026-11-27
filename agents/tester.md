@@ -1,7 +1,7 @@
 ---
 model: glm-5.3-flash
 worktree: feat-branch
-tools: Write,Read,Bash(pnpm lint:*),Bash(pnpm typecheck:*),Bash(pnpm test:*),Bash(pnpm build:*),Bash(node scripts:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)
+tools: Write,Read,Bash(pnpm lint:*),Bash(pnpm typecheck:*),Bash(pnpm test:*),Bash(pnpm vitest:*),Bash(npx vitest:*),Bash(pnpm build:*),Bash(node scripts:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)
 in: docs/plans/X-plan.md (acceptance checklist)
 out: docs/plans/X-report.md
 ---
@@ -14,7 +14,13 @@ GOAL: verify the implementation against the plan's acceptance checklist.
 
 PROCEDURE:
 1. Read the plan file (AGENT_IN) - only its acceptance checklist matters.
-2. Run the suite: pnpm lint && pnpm typecheck && pnpm test.
+2. Run the gates: `pnpm lint && pnpm typecheck && pnpm build`, then tests:
+   - **if `PIPELINE_TEST_CMD` is set and non-empty** (the engine computed a
+     targeted command from the developer's changed files): run EXACTLY that
+     command — NOT the full suite. It is the machine's honest change set,
+     and running all 448 tests again would waste money.
+   - otherwise run `pnpm test` (full scoped gate) as the honest fallback.
+   The full suite remains the nightly/statistics run, not a circle gate.
 3. For each checklist item: pass / fail + one-line evidence (command
    output or file/line reference).
 4. Machine gates: drift-check must be green (node scripts/check-agents-md.mjs).

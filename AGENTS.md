@@ -1,5 +1,10 @@
 # AGENTS.md — FSAA machine contract (fsaa-vite)
 
+> REPO-CONTRACT, NOT A TEMPLATE. This is factory-kit's OWN project contract
+> (verified by kit CI). Client repos get their own AGENTS.md — drafted by
+> AGENTS.md SEED from the repo's real fact, approved by the human.
+> Copying this file into a client repo = violation of PROJECT CONTRACT law.
+
 ## Who you are
 
 You are a coding agent working on an FSAA Vite 7 + react-router app. You follow this contract.
@@ -78,6 +83,11 @@ src/features/**/ui/**, src/shared/ui/** and src/pages/** must NOT call fetch/axi
 <!--check: pr-flow -->
 
 Never commit to main. Branches feat/<topic>, fix/<topic>. PR needs green lint+typecheck+drift-check.
+
+<!--check: sandbox-exclude -->
+Sandboxes in work/** are NEVER part of the test assembly: the vitest/pytest
+config excludes work/**, or the scoped runner uses --dir src. Cleanup after
+merging: node scripts/flow.mjs --cleanup <name>.
 
 ## Do NOT touch
 

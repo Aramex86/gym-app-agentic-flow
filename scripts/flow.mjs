@@ -29,6 +29,7 @@ import { loadEnv } from "./env.mjs";
 import { guard as budgetGuard } from "./budget.mjs";
 import { copyFileSync as _copy } from "node:fs"; // (also used dynamically elsewhere)
 import * as changedTests from "./changed-tests.mjs";
+import { buildTestGate } from "./test-gate.mjs";
 import { maybeRunAutoDiag } from "./auto-diag.mjs";
 import { checkRailCli } from "./cli-preflight.mjs";
 
@@ -185,7 +186,26 @@ async function committerStep(_name, report, cwd, rid) {
     );
     return;
   }
-  const a = spawnSync("git", ["add", ...add], { stdio: "inherit", cwd });
+  // COMBAT 27.11: the human may pre-delete deprecated files (git rm) at the
+  // diff gate. `git add <deleted-path>` then fails with "pathspec did not
+  // match" — the deletion is ALREADY staged. Skip such paths if and only if
+  // git confirms them as staged deletions; never silently drop a missing
+  // file that is NOT staged (that would hide a real problem).
+  const stagedDeleted = new Set(
+    git(["diff", "--cached", "--name-only", "--diff-filter=D"], { cwd })
+      .stdout.toString().trim().split("\n").filter(Boolean),
+  );
+  const addPaths = add.filter((p) => {
+    if (existsSync(join(cwd, p))) return true;
+    if (stagedDeleted.has(p)) {
+      console.log(`  (already staged deletion: ${p})`);
+      return false;
+    }
+    exit(1, `git add failed: ${p} is missing and not a staged deletion`);
+  });
+  const a = addPaths.length
+    ? spawnSync("git", ["add", ...addPaths], { stdio: "inherit", cwd })
+    : { status: 0 };
   if (a.status !== 0) exit(1, "git add failed");
   // IDENTITY LAW: the committer commits as the REPO identity, pinned
   // explicitly at the command line (-c) - enterprise rails can hijack
@@ -704,7 +724,42 @@ if (!isY(diffGate))
   exit(0, "flow stopped before tester");
 
 clog("tester", "\n===> TESTER");
+// TARGETED TESTER HOP (master 27.11): compute the changed-file gate BEFORE
+// the hop and pass it through env so the tester runs only those test files.
+// Mirrors verifyVerdict's change set (tracked diff vs fork point + untracked)
+// and falls back to the full gate honestly when the passport has no template.
+delete process.env.PIPELINE_TEST_CMD;
+try {
+  const P = getProfile(wt, undefined);
+  const base = (() => {
+    for (const b of ["develop", "main"]) {
+      const m = spawnSync("git", ["rev-parse", "--verify", b], { cwd: wt, stdio: "pipe" });
+      if (m.status === 0) return b;
+    }
+    return null;
+  })();
+  if (base) {
+    const mb = spawnSync("git", ["merge-base", "HEAD", base], { cwd: wt, stdio: "pipe" });
+    const tracked = mb.status === 0
+      ? spawnSync("git", ["diff", "--name-only", mb.stdout.toString().trim()], { cwd: wt, stdio: "pipe" })
+      : { status: 1, stdout: Buffer.alloc(0) };
+    const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard"], { cwd: wt, stdio: "pipe" });
+    if (tracked.status === 0) {
+      const changed = [
+        ...changedTests.parseDiff(tracked.stdout.toString()),
+        ...changedTests.parseDiff(untracked.stdout.toString()),
+      ];
+      const gate = buildTestGate(P, changed);
+      if (gate.cmd) process.env.PIPELINE_TEST_CMD = gate.cmd;
+      console.log(`(tester gate) ${gate.note}${gate.cmd ? ': ' + gate.cmd : ''}`);
+      trace.ev(rid, { event: "tester_gate", targeted: gate.targeted, note: gate.note });
+    }
+  }
+} catch (e) {
+  console.log("(tester gate) honest fallback: " + (e && e.message || e));
+}
 if (hop(["tester", "-i", plan], wt, rid) !== 0) exit(1, "tester hop failed");
+delete process.env.PIPELINE_TEST_CMD;
 
 console.log("\x1b[32m\n===> VERDICT\x1b[0m");
 console.log(

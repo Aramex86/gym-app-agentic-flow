@@ -22,6 +22,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { getProfile } from "./profile.mjs";
+import { checkSandboxExclude } from "./sandbox-exclude.mjs";
 
 /** Template shape: layer dirs required by the contract (fsaa-vite / Vite+react-router). */
 const LAYER_DIRS = ["src/app", "src/pages", "src/features", "src/entities", "src/shared"];
@@ -202,6 +203,12 @@ const checks = {
     const major = Number((pm.match(/pnpm@(\d+)/) || [])[1] || 0);
     const allow = pkg.pnpm && pkg.pnpm.onlyBuiltDependencies;
     return major >= 10 && Array.isArray(allow);
+  },
+  /** SANDBOX-EXCLUDE LAW: work/<x>/ sandboxes must stay out of the test
+   *  assembly (config exclude or --dir src in the runner). */
+  "sandbox-exclude": () => {
+    const r = checkSandboxExclude(process.cwd(), { readFileSync, existsSync, join });
+    return r.ok ? true : [r.note];
   },
 };
 

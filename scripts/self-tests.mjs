@@ -7,7 +7,7 @@
 //
 // Usage: node scripts/self-tests.mjs [ST-1] [...]
 // Exit:  0 all green · 1 any red · PENDING exhibits never count as red.
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -787,10 +787,20 @@ await exhibit('ST-28', 'auto-diag: doctor due-when-unstamped, adlc due on %5, st
   const savedBase = process.env.PIPELINE_TRACE_BASE;
   delete process.env.PIPELINE_TRACE_BASE;
   const w = mkdtempSync(join(tmpdir(), 'st28w-'));
-  // (a) CLEAN: root = KIT -> the REAL scripts/doctor.mjs resolves -> success stamp
+  // (a) CLEAN: root = KIT -> the REAL scripts/doctor.mjs resolves, but the
+  // TRACE BASE IS ISOLATED — otherwise this exhibit stamps the REAL
+  // .pipeline/.doctor-last and steals the doctor's once-a-day exam from the
+  // first circle (combat 27.11: "doctor doesn't start before first circle").
+  const cleanBase = join(w, 'clean');
+  mkdirSync(cleanBase, { recursive: true });
+  process.env.PIPELINE_TRACE_BASE = cleanBase;
+  const realMarker = join(KIT, '.pipeline', '.doctor-last');
+  const markerBefore = ex(realMarker) ? readFileSync(realMarker, 'utf8') : null;
   const line1 = AUTODIAG.maybeRunAutoDiag({ root: KIT, phase: 'pre' });
-  const markerKit = join(KIT, '.pipeline', '.doctor-last');
+  const markerKit = join(cleanBase, '.pipeline', '.doctor-last');
   assert(ex(markerKit) && readFileSync(markerKit, 'utf8').trim() === AUTODIAG.todayStamp(), `clean doctor stamps today (line: ${line1})`);
+  const markerAfter = ex(realMarker) ? readFileSync(realMarker, 'utf8') : null;
+  assert(markerAfter === markerBefore, 'self-tests must NOT touch the real doctor marker (the first circle owns it)');
   const line2 = AUTODIAG.maybeRunAutoDiag({ root: KIT, phase: 'pre' });
   assert(line2 === '', 'same-day stamp -> doctor not re-spawned');
   // (b) BROKEN: PIPELINE_TRACE_BASE = an ACTUAL FILE -> readdirSync ENOTDIR -> doctor exit 1
@@ -799,7 +809,8 @@ await exhibit('ST-28', 'auto-diag: doctor due-when-unstamped, adlc due on %5, st
   process.env.PIPELINE_TRACE_BASE = trap;
   const line3 = AUTODIAG.maybeRunAutoDiag({ root: KIT, phase: 'pre' });
   assert(line3.includes('FAILED') && line3.includes('exit=1'), `broken base surfaces FAILED + exit: ${line3}`);
-  process.env.PIPELINE_TRACE_BASE = savedBase;
+  if (savedBase === undefined) delete process.env.PIPELINE_TRACE_BASE;
+  else process.env.PIPELINE_TRACE_BASE = savedBase;
 }); 
 // ------------------------------------------------------------------
 // ST-29 GATE-INPUT LAW (born from the 25.11 combat crash, $2.95): the
@@ -848,6 +859,71 @@ await exhibit('ST-31', 'design review: source-agnostic skeleton + one-screen rol
   assert(drv.includes('screen-skeleton.mjs') && drv.includes('design-reviewer'), 'driver wires digest -> hop');
   const tbl = src('agents-pipeline.yaml');
   assert(/design-reviewer:/.test(tbl), 'model table has the role');
+});
+
+// ST-32 COMMITTER / PRE-DELETED PATHS (combat 27.11): a human `git rm` at
+// the diff gate must not break the committer's git add (pathspec gone).
+await exhibit('ST-32', 'committer tolerates human-prestaged deletions (no pathspec crash)', () => {
+  const f = src('scripts/flow.mjs');
+  assert(f.includes('--diff-filter=D'), 'staged deletions are detected from git');
+  assert(f.includes('already staged deletion'), 'the skip is explicit and visible');
+  assert(f.includes('is missing and not a staged deletion'), 'missing-but-unstaged files still hard-stop');
+  assert(!/git\", \[\"add\", \.\.\.add\]/.test(f), 'blind git add ...add removed');
+});
+
+// ST-33 SANDBOX-EXCLUDE LAW (master 24.11, build 27.11): work/<x> sandboxes
+// must not enter the test assembly. Passport records it, drift-check verifies.
+await exhibit('ST-33', 'sandbox-exclude: passport hyphen key readable + test config excludes work/**', async () => {
+  const { getProfile } = await import(pathToFileURL(join(KIT, 'scripts', 'profile.mjs')).href);
+  const { checkSandboxExclude } = await import(pathToFileURL(join(KIT, 'scripts', 'sandbox-exclude.mjs')).href);
+  const fsT = { readFileSync, existsSync: ex, join };
+  // (a) passport hyphen keys are readable (was a KNOWLEDGE GAP on Numbers)
+  const a = mkdtempSync(join(tmpdir(), 'sxe-a-'));
+  mkdirSync2(join(a, 'docs'));
+  wf(join(a, 'docs', 'factory-profile.md'), '---\nschema: 1\ntest-exclude: work/**\ntest-targeted: npx vitest run $FILES\nui-libs: recharts\n---\n');
+  const pa = getProfile(a, fsT);
+  assert(pa['test-exclude'] === 'work/**', 'hyphenated passport key test-exclude was dropped');
+  assert(pa['test-targeted'] === 'npx vitest run $FILES' && pa['ui-libs'] === 'recharts', 'other hyphen keys still dropped');
+  // (b) fresh project, no sandboxes -> honest pass
+  const b = mkdtempSync(join(tmpdir(), 'sxe-b-'));
+  const rb = checkSandboxExclude(b, fsT);
+  assert(rb.ok, 'no work/ dir must pass');
+  // (c) work/ exists, no exclusion -> failure with the exact law hint
+  const c = mkdtempSync(join(tmpdir(), 'sxe-c-'));
+  mkdirSync2(join(c, 'work'));
+  const rc = checkSandboxExclude(c, fsT);
+  assert(!rc.ok && /work\/\*\*/.test(rc.note), 'unexcluded sandbox must fail honestly');
+  // (d) config excludes work/** + passport declares it -> pass
+  const d = mkdtempSync(join(tmpdir(), 'sxe-d-'));
+  mkdirSync2(join(d, 'work')); mkdirSync2(join(d, 'docs'));
+  wf(join(d, 'vite.config.ts'), 'export default { test: { exclude: ["work/**"] } };');
+  wf(join(d, 'docs', 'factory-profile.md'), '---\ntest-exclude: work/**\n---\n');
+  const rd = checkSandboxExclude(d, fsT);
+  assert(rd.ok, `excluded sandbox must pass: ${rd.note}`);
+  // (e) drift-check + AGENTS.md two-way binding
+  assert(src('scripts/check-agents-md.mjs').includes('sandbox-exclude'), 'drift check not wired');
+  assert(/<!--check:\s*sandbox-exclude\s*-->/.test(src('AGENTS.md')), 'AGENTS.md marker missing');
+});
+
+// ST-34 TARGETED TESTER HOP (master 27.11): the TESTER itself must run only
+// the tests mapped from the developer's changed files, not the full suite.
+await exhibit('ST-34', 'targeted tester: hop receives changed-file gate, full suite stays nightly', async () => {
+  const { buildTestGate } = await import(pathToFileURL(join(KIT, 'scripts', 'test-gate.mjs')).href);
+  const profile = { test: 'pnpm test', 'test-targeted': 'pnpm vitest run $FILES' };
+  // (a) one changed source file -> targeted command with its mapped tests
+  const a = buildTestGate(profile, ['src/shared/ui/atoms/ComboChart.tsx']);
+  assert(a.cmd && /vitest run/.test(a.cmd) && /ComboChart.test/.test(a.cmd), 'changed file must produce a targeted command');
+  assert(a.targeted === true, 'gate must be marked targeted (trace fact)');
+  // (b) structural change -> honest full-gate fallback
+  const b = buildTestGate(profile, ['package.json']);
+  assert(!b.cmd && !b.targeted, 'structural change falls back to full gate');
+  // (c) no template -> honest full-gate fallback, never a fake command
+  const c = buildTestGate({ test: 'pnpm test' }, ['src/a.ts']);
+  assert(!c.cmd && !c.targeted, 'no template = full gate');
+  // (d) flow wires the command into the TESTER hop; contract honours it
+  assert(src('scripts/flow.mjs').includes('PIPELINE_TEST_CMD'), 'flow does not pass the gate to the tester hop');
+  assert(src('agents/tester.md').includes('PIPELINE_TEST_CMD'), 'tester contract ignores the gate');
+  assert(/Bash\(pnpm vitest:\*\)/.test(src('agents/tester.md')), 'tester tool wall blocks the targeted runner');
 });
 
 const green = results.filter((r) => r.ok);

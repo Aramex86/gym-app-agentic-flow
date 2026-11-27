@@ -35,6 +35,9 @@ its PASSPORT. You are READ-ONLY except ONE artifact.
    test: <from detector or unknown>
    test-targeted: <the targeted-test template, when you can build one from
                    REAL evidence — see below; otherwise unknown>
+   test-exclude: work/**    <- SANDBOX-EXCLUDE law: work/<x> sandboxes must
+                               never enter the test assembly
+   ui-libs: <chart/UI libraries actually declared in package.json, or unknown>
    build: <from detector or unknown>
    lockfile: <the lockfile filename you actually saw, or unknown>
    commit_rules: <husky | conventional | plain — ONLY if you read real

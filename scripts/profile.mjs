@@ -24,6 +24,11 @@ const DEFAULTS = {
   test: 'pnpm test',
   build: 'pnpm build',
   lockfile: 'pnpm-lock.yaml',
+  // SANDBOX-EXCLUDE + targeted law + ui-libs: hyphenated keys MUST be
+  // readable (Numbers research gap 25.11: they were written but invisible).
+  'test-exclude': 'work/**',
+  'test-targeted': 'unknown',
+  'ui-libs': 'unknown',
   commit_rules: 'plain',
   structure: 'free',
   unknown: [],
@@ -38,7 +43,7 @@ export function getProfile(root, fs) {
     const raw = f.readFileSync(p, 'utf8');
     const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || '';
     for (const line of fm.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Za-z_][\w]*):\s*(.*?)\s*$/);
+      const m = line.match(/^\s*([A-Za-z_][\w-]*):\s*(.*?)\s*$/);
       if (m && m[2] !== '' && m[1] in out) {
         const key = m[1];
         let val = m[2];
