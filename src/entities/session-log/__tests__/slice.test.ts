@@ -305,6 +305,85 @@ describe("entities/session-log selectExerciseFocus — sample pins", () => {
   });
 });
 
+describe("entities/session-log selectExerciseFocus — baseAnchor (plan Step 1)", () => {
+  /* Anchor fixture (plan Step 1): one bench session on 2026-10-20 inside
+     the 7 days BEFORE the window (2026-10-23..2026-11-19). Epley 75×8 =
+     95.0 kg; anchor weekStart = from − 7 days = 2026-10-16. WHY a local
+     fixture, not sample.ts: an 7th sample session would change the
+     session-count / summaries pins above (they iterate SESSION_LOG_SAMPLE
+     directly) — the anchor must not disturb any existing pin. */
+  const WITH_ANCHOR_FIXTURE: SessionLogEntry[] = [
+    ...SESSION_LOG_SAMPLE,
+    {
+      id: "s-2026-10-20-upper",
+      date: "2026-10-20",
+      split: "Upper",
+      durationMin: 58,
+      sets: [
+        { exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 75, reps: 8, sets: 1 },
+      ],
+    },
+  ];
+
+  it("anchor session in the 7 days before the window → baseAnchor 95 kg @ 2026-10-16, e1rmPoints unchanged", () => {
+    const focus = selectExerciseFocus(WITH_ANCHOR_FIXTURE, "barbell-bench-press")!;
+    expect(focus.baseAnchor).toEqual({
+      weekStart: "2026-10-16",
+      valueKg: 95,
+      sessionCount: 1,
+    });
+    // The anchor session is pre-window: still the sample's 3 data weeks.
+    expect(focus.e1rmPoints.map((point) => point.weekStart)).toEqual([
+      "2026-10-30", "2026-11-06", "2026-11-13",
+    ]);
+  });
+
+  it("sample alone → baseAnchor is undefined (no session in the anchor week)", () => {
+    expect(selectExerciseFocus(SESSION_LOG_SAMPLE, "barbell-bench-press")!.baseAnchor).toBeUndefined();
+  });
+
+  it("a session before the anchor week yields no anchor (withOld: 2026-10-01)", () => {
+    const withOld = [
+      ...SESSION_LOG_SAMPLE,
+      {
+        id: "s-2026-10-01-upper",
+        date: "2026-10-01",
+        split: "Upper",
+        durationMin: 60,
+        sets: [
+          { exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 70, reps: 10, sets: 3 },
+        ],
+      },
+    ];
+    // 2026-10-01 < from − 7 days (2026-10-16) → outside the anchor week.
+    expect(selectExerciseFocus(withOld, "barbell-bench-press")!.baseAnchor).toBeUndefined();
+  });
+
+  it("anchor uses the BEST set of the week and is input-order independent", () => {
+    const twoAnchorSessions = [
+      ...WITH_ANCHOR_FIXTURE,
+      {
+        id: "s-2026-10-18-upper",
+        date: "2026-10-18",
+        split: "Upper",
+        durationMin: 55,
+        sets: [
+          { exerciseId: "barbell-bench-press", exerciseName: "Bench Press", weightKg: 72.5, reps: 8, sets: 1 },
+        ],
+      },
+    ];
+    const focus = selectExerciseFocus(twoAnchorSessions, "barbell-bench-press")!;
+    // Epley 72.5×8 = 91.7 vs 75×8 = 95.0 → best is 95.0, 2 sessions.
+    expect(focus.baseAnchor).toEqual({
+      weekStart: "2026-10-16",
+      valueKg: 95,
+      sessionCount: 2,
+    });
+    expect(selectExerciseFocus([...twoAnchorSessions].reverse(), "barbell-bench-press"))
+      .toEqual(focus);
+  });
+});
+
 describe("entities/session-log selectExerciseFocus — full 4-week window (plan §6.2 upper boundary)", () => {
   /* Four Bench sessions, exactly one per weekly bucket: with to = 2026-11-25
      and from = 2026-10-29 (A3 window), the buckets start 2026-10-29,

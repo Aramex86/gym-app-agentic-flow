@@ -289,6 +289,32 @@ export function selectExerciseFocus(
 
   if (buckets.size === 0) return null;
 
+  // Base anchor (plan A4): best e1RM of the 7 days immediately BEFORE the
+  // window — a REAL session that becomes the chart's first tick. It is
+  // order-independent (a count + a max over the entries, both commutative)
+  // and absent when that week has no session: no synthetic anchor, never a
+  // filled gap. An exercise present only in the anchor week is NOT tracked
+  // in the window — the buckets.size === 0 rule above still governs null.
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const anchorFromMs = fromMs - WEEK_MS;
+  let anchorBest = Number.NEGATIVE_INFINITY;
+  let anchorSessionCount = 0;
+  for (const entry of entries) {
+    const entryMs = Date.parse(`${entry.date}T00:00:00.000Z`);
+    if (entryMs < anchorFromMs || entryMs >= fromMs) continue;
+    if (!entry.sets.some((set) => set.exerciseId === exerciseId)) continue;
+    anchorSessionCount += 1;
+    anchorBest = Math.max(anchorBest, bestE1rm(entry.sets, exerciseId));
+  }
+  const baseAnchor: WeeklyE1rmPoint | undefined =
+    anchorSessionCount > 0
+      ? {
+          weekStart: isoDate(anchorFromMs),
+          valueKg: round1(anchorBest),
+          sessionCount: anchorSessionCount,
+        }
+      : undefined;
+
   const e1rmPoints: WeeklyE1rmPoint[] = [];
   const volumeBands: WeeklyVolumeBand[] = [];
   // Ascending bucket index — the first one's name IS the first windowed
@@ -320,5 +346,8 @@ export function selectExerciseFocus(
     weekCount: weeks,
     e1rmPoints,
     volumeBands,
+    // WHY conditional spread, not `baseAnchor: undefined`: the plan (A4)
+    // pins the property as OMITTED when no anchor session exists.
+    ...(baseAnchor ? { baseAnchor } : {}),
   };
 }

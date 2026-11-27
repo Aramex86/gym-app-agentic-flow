@@ -3,7 +3,7 @@ import { HistoryTable, Button, ToggleChip } from "@shared/ui";
 import type { HistoryRowInfo } from "@shared/ui";
 import { PlanDisclaimer } from "@features/plan-disclaimer";
 import { PlanRecompose, PLAN_RECOMPOSE_ID } from "@features/plan-recompose";
-import { ExerciseFocusCharts } from "@features/progress-exercise-focus";
+import { ExerciseFocusChartCard } from "@features/progress-exercise-focus";
 import { HistoryLog } from "@features/progress-history";
 import { InsightCard } from "@features/progress-insight";
 import { getTrainingPlan } from "@entities/training-plan";
@@ -124,7 +124,7 @@ export function ProgressPage() {
       <InsightCard />
       {/* Plan §8.3: focus charts between insight and history — the existing
           pairwise order assertions stay valid. */}
-      <ExerciseFocusCharts onCompose={scrollToComposer} />
+      <ExerciseFocusChartCard onCompose={scrollToComposer} />
       <HistoryLog />
 
       <HistoryTable

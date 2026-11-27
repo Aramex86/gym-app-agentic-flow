@@ -37,5 +37,7 @@ export { TrajectoryChart } from "./atoms/TrajectoryChart";
 export type { TrajectoryChartProps, TrajectoryPoint } from "./atoms/TrajectoryChart";
 export { RangeBandChart } from "./atoms/RangeBandChart";
 export type { RangeBandChartProps, RangeBandDatum } from "./atoms/RangeBandChart";
+export { ComboChart } from "./atoms/ComboChart";
+export type { ComboChartProps, ComboChartPoint } from "./atoms/ComboChart";
 export { ChoiceChipGroup } from "./molecules/ChoiceChipGroup";
 export type { ChoiceChipGroupProps, ChoiceChipOption } from "./molecules/ChoiceChipGroup";
