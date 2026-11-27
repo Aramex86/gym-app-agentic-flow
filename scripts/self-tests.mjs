@@ -926,6 +926,41 @@ await exhibit('ST-34', 'targeted tester: hop receives changed-file gate, full su
   assert(/Bash\(pnpm vitest:\*\)/.test(src('agents/tester.md')), 'tester tool wall blocks the targeted runner');
 });
 
+// ST-36 EVAL:RUN-ALL (master 27.11, Phase-4 easy #1): one command, one
+// honest verdict. Tests cross ONLY the agreed seam: runAll(runner, checks)
+// and the CLI with an injected runner adapter. No internals touched.
+await exhibit('ST-36', 'eval-all: one CLI, honest aggregate verdict (skip is not a failure)', async () => {
+  const { runAll } = await import(pathToFileURL(join(KIT, 'scripts', 'eval-all.mjs')).href);
+  const checks = [
+    { id: 'self-tests', args: ['scripts/self-tests.mjs'] },
+    { id: 'doctor', args: ['scripts/doctor.mjs', '--fail-on-error'] },
+    { id: 'adlc', args: ['scripts/adlc.mjs'] },
+    { id: 'golden', args: ['scripts/eval.mjs', 'evals/golden-x.md'], skip: true },
+  ];
+  const greenRunner = () => ({ status: 0, stdout: 'ok\n', stderr: '' });
+  // (a) all executable checks green + one declared skip -> ok, exit 0
+  const a = runAll(greenRunner, checks);
+  assert(a.ok === true && a.exit === 0, 'all green must yield ok=true and exit 0');
+  assert(a.checks.find((c) => c.id === 'golden').status === 'skip', 'declared skip must stay a skip');
+  assert(/eval-all:/.test(a.summary), 'summary must be one honest line');
+  // (b) any non-zero check -> fail, exit 1, the failing check NAMED
+  const redRunner = (cmd, args) => args.some((a) => a.endsWith('doctor.mjs'))
+    ? { status: 1, stdout: '', stderr: 'drift detected' }
+    : { status: 0, stdout: 'ok\n', stderr: '' };
+  const b = runAll(redRunner, checks);
+  assert(b.ok === false && b.exit === 1, 'a red check must fail the aggregate');
+  assert(/doctor/.test(b.summary), 'summary must name the failing check');
+  // (c) CLI with an injected runner adapter — the real external seam
+  const dir = mkdtempSync(join(tmpdir(), 'evalall-'));
+  wf(join(dir, 'green.mjs'), 'export default function(){ return { status: 0, stdout: "ok", stderr: "" }; }\n');
+  wf(join(dir, 'red.mjs'), 'export default function(){ return { status: 1, stdout: "", stderr: "boom" }; }\n');
+  const cli = (file) => ss(process.execPath, ['scripts/eval-all.mjs', '--runner', join(dir, file)], { cwd: KIT, encoding: 'utf8' });
+  const cg = cli('green.mjs');
+  assert(cg.status === 0 && /eval-all:/.test(cg.stdout), `CLI green: ${cg.status} ${cg.stdout}`);
+  const cr = cli('red.mjs');
+  assert(cr.status === 1 && /FAIL/.test(cr.stdout + cr.stderr), `CLI red: ${cr.status} ${cr.stdout}${cr.stderr}`);
+});
+
 const green = results.filter((r) => r.ok);
 const red = results.filter((r) => !r.ok && !r.pending && !r.skip);
 const pend = results.filter((r) => !r.ok && r.pending);
