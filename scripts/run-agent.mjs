@@ -11,7 +11,8 @@ import { readFileSync, existsSync, openSync, closeSync, rmSync, mkdirSync } from
 import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { loadEnv } from './env.mjs';
+import { loadEnv } from "./env.mjs";
+import { missingCliMessage } from "./cli-preflight.mjs";
 import { getProfile } from './profile.mjs';
 import { ev, snap, promptSnap, hopTail, reportDigest, readLatestUsage } from './trace.mjs';
 loadEnv();    // reads repo .env (PIPELINE_CLI, OLLAMA_*, RUN_MODEL)  system env wins
@@ -444,7 +445,11 @@ try { rmSync(path.join(root, '.pipeline-stop')); } catch {}
     p.on('error', (e) => {
       clearInterval(hb);
       closeSync(logFd);
-      console.error(`[run-agent] spawn failed: ${e.message}`);
+      // CLI PREFLIGHT LAW: even a direct hop (no flow) must fail with the
+      // install command, never a bare ENOENT from the depths of Node.
+      console.error(e.code === 'ENOENT'
+        ? missingCliMessage(cli, 'spawn ENOENT')
+        : `[run-agent] spawn failed: ${e.message}`);
       resolve(-1);
     });
   });
@@ -534,7 +539,9 @@ if (runIsAsync) {
   if (code !== 0) exit(code ?? 1, `[run-agent] CLI exited ${code} (log: .pipeline-last-run.log)`);
 } else {
   const r = spawnSync(cli, argv, { cwd: process.cwd(), env, stdio: 'inherit', timeout: 10 * 60_000 });
-  if (r.error) exit(2, `spawn failed: ${r.error.message}`);
+  if (r.error) exit(2, r.error.code === 'ENOENT'
+    ? missingCliMessage(cli, 'spawn ENOENT')
+    : `spawn failed: ${r.error.message}`);
   if (r.status !== 0) exit(r.status ?? 1, `[run-agent] CLI exited ${r.status}`);
 }
 

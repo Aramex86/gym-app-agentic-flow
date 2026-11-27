@@ -30,6 +30,7 @@ import { guard as budgetGuard } from "./budget.mjs";
 import { copyFileSync as _copy } from "node:fs"; // (also used dynamically elsewhere)
 import * as changedTests from "./changed-tests.mjs";
 import { maybeRunAutoDiag } from "./auto-diag.mjs";
+import { checkRailCli } from "./cli-preflight.mjs";
 
 loadEnv(); // repo .env (PIPELINE_CLI, OLLAMA_*, PIPELINE_BUDGET_USD) - system env wins
 
@@ -54,6 +55,15 @@ const git = (args, opts = {}) =>
 const gitRun = (args, cwd) => spawnSync("git", args, { stdio: "inherit", cwd });
 
 function hop(args, cwd, rid) {
+  // CLI PREFLIGHT LAW (26.11): check ONCE at the first real hop, not at flow
+  // startup — maintenance commands (--cleanup, --fix usage) must still work
+  // on a machine without a rail CLI. A rail without its CLI stops here,
+  // before any model token is spent, with the exact install command.
+  if (!globalThis.__railPreflighted) {
+    const missing = checkRailCli(process.env.PIPELINE_CLI || "claude");
+    if (missing) exit(1, "\n" + missing + "\n");
+    globalThis.__railPreflighted = true;
+  }
   const script = join(process.cwd(), "scripts", "run-agent.mjs");
   // ADR-0006/0007 honesty: the ledger and the trace must live in ONE place.
   // Inherit the caller's PIPELINE_TRACE_BASE when set (one base, not two);

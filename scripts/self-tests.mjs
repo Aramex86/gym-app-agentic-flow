@@ -616,13 +616,18 @@ await exhibit('ST-22', 'verdict verification: engine re-runs passport gates, red
     return d;
   };
   const getProfileMod = await import(pathToFileURL(join(KIT, 'scripts', 'profile.mjs')).href);
+  // ST-22 must exercise the REAL targeted path, not hide a ReferenceError in
+  // verifyVerdict's catch (combat 26.11: "targeted skipped: changedTests is
+  // not defined" x3 while ST stayed green = a dishonest exhibit).
+  const changedTestsMod = await import(pathToFileURL(join(KIT, 'scripts', 'changed-tests.mjs')).href);
   const deps = {
     getProfile: (root) => getProfileMod.getProfile(root),
     spawnSync: ss,
     trace: { ev: () => {} },
+    changedTests: changedTestsMod,
   };
-  const mkFn = new Function('getProfile', 'spawnSync', 'trace', 'process', 'exit', fn.replace('function verifyVerdict', 'var verifyVerdict = function verifyVerdict') + ';\nreturn verifyVerdict;');
-  const vv = mkFn(deps.getProfile, deps.spawnSync, deps.trace, process, (code, msg) => { throw new Error(`exit(${code}): ${msg || ''}`); });
+  const mkFn = new Function('getProfile', 'spawnSync', 'trace', 'changedTests', 'process', 'exit', fn.replace('function verifyVerdict', 'var verifyVerdict = function verifyVerdict') + ';\nreturn verifyVerdict;');
+  const vv = mkFn(deps.getProfile, deps.spawnSync, deps.trace, deps.changedTests, process, (code, msg) => { throw new Error(`exit(${code}): ${msg || ''}`); });
   // a) green gates -> ok
   const ok = vv(mk('node -e "process.exit(0)"', 'node -e "process.exit(0)"'), 'r1');
   assert(ok.ok && ok.results.length === 3, `green fixture failed: ${JSON.stringify(ok.results)}`);
@@ -797,6 +802,54 @@ await exhibit('ST-28', 'auto-diag: doctor due-when-unstamped, adlc due on %5, st
   process.env.PIPELINE_TRACE_BASE = savedBase;
 }); 
 // ------------------------------------------------------------------
+// ST-29 GATE-INPUT LAW (born from the 25.11 combat crash, $2.95): the
+// interactive Y-gates flow through `input` (node:process stdin) — the
+// import MUST exist or the circle dies at the FIRST gate after paying.
+await exhibit('ST-29', 'flow imports stdin for the Y-gate ask() — never dies after a paid hop', () => {
+  const s = src('scripts/flow.mjs');
+  assert(s.includes('stdin as input'), 'stdin import present (Y-gate stdin bridge)');
+  assert(/import \{ stdin as input, stdout as output \} from ['"]node:process['"]/.test(s), 'the import line is the process-stdin one');
+  assert(s.includes('input.readableEnded'), 'ask() guards EOF via input.readableEnded');
+});
+
+// ST-30 CLI PREFLIGHT LAW (master 25.11, built 26.11): no rail CLI = a
+// one-line honest stop BEFORE the first token. Silent auto-install denied.
+await exhibit('ST-30', 'CLI preflight: no rail CLI stops with install command before any hop', async () => {
+  const pf = await import(pathToFileURL(join(KIT, 'scripts', 'cli-preflight.mjs')).href);
+  const missing = pf.checkRailCli('claude', { bin: 'definitely-not-a-cli-xyz-' + Date.now() });
+  assert(missing && /MISSING CLI/.test(missing), 'missing rail must produce the honest line');
+  assert(/npm i -g/.test(missing), 'the line must name the install command');
+  const present = pf.checkRailCli(process.execPath.replace(/\\/g, '/'), {});
+  // node --version is not a rail; the missing case above is the law. Assert
+  // real claude presence only where installed (no false green on CI):
+  if (process.env.PIPELINE_CLI_TEST_PRESENT === '1') {
+    const cli = process.env.PIPELINE_CLI || 'claude';
+    assert(pf.checkRailCli(cli) === null, `installed ${cli} must pass preflight`);
+  }
+  const flow = src('scripts/flow.mjs');
+  const agent = src('scripts/run-agent.mjs');
+  assert(flow.includes('checkRailCli(') && flow.includes('__railPreflighted'), 'flow checks before the first hop, once');
+  assert(agent.includes('missingCliMessage('), 'direct hop ENOENT is translated');
+  assert(!flow.includes('npm i -g claude') && !agent.includes('execSync'), 'no silent auto-install');
+});
+
+// ST-31 DESIGN REVIEW HOP (master 26.11): source-agnostic screen map BEFORE
+// the planner — cheap skeleton (zero tokens), one screen, one artifact.
+await exhibit('ST-31', 'design review: source-agnostic skeleton + one-screen role + map artifact', async () => {
+  const sk = src('scripts/screen-skeleton.mjs');
+  const role = src('agents/design-reviewer.md');
+  const drv = src('scripts/design-review.mjs');
+  assert(!/stitch|figma/i.test(sk), 'skeleton parser must be vendor-agnostic (by file type)');
+  assert(/NO IMAGE/.test(sk) && /\.\(png\|jpe\?g\|webp\)/.test(sk), 'image is required source of truth');
+  assert(/<!--/.test(sk) && /12000/.test(sk), 'zones extracted via markup comments, hard cap present');
+  assert(/ONE SCREEN PER HOP/.test(role), 'one screen per hop law');
+  assert(/\[Reuse \| New \| Variant\]/.test(role), 'component map classification');
+  assert(/docs\/design-decomposition/.test(role) && /KNOWLEDGE GAP/.test(role), 'one artifact + honest gaps');
+  assert(drv.includes('screen-skeleton.mjs') && drv.includes('design-reviewer'), 'driver wires digest -> hop');
+  const tbl = src('agents-pipeline.yaml');
+  assert(/design-reviewer:/.test(tbl), 'model table has the role');
+});
+
 const green = results.filter((r) => r.ok);
 const red = results.filter((r) => !r.ok && !r.pending && !r.skip);
 const pend = results.filter((r) => !r.ok && r.pending);
@@ -816,14 +869,3 @@ if (red.length) {
   console.log(' DRIFT against the laws - engine code moved, exhibits caught it.');
   process.exit(1);
 }
-
-
-// ST-29 GATE-INPUT LAW (born from the 25.11 combat crash, $2.95): the
-// interactive Y-gates flow through `input` (node:process stdin) — the
-// import MUST exist or the circle dies at the FIRST gate after paying.
-await exhibit('ST-29', 'flow imports stdin for the Y-gate ask() — never dies after a paid hop', () => {
-  const s = src('scripts/flow.mjs');
-  assert(s.includes('stdin as input'), 'stdin import present (Y-gate stdin bridge)');
-  assert(/import \{ stdin as input, stdout as output \} from ['"]node:process['"]/.test(s), 'the import line is the process-stdin one');
-  assert(s.includes('input.readableEnded'), 'ask() guards EOF via input.readableEnded');
-});

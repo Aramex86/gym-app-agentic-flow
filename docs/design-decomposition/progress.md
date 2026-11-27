@@ -1,0 +1,186 @@
+# Screen map: progress (Performance & Volume)
+Source: screen.png (+ DESIGN.md token file, code.html markup, .pipeline/design-skeletons/progress.txt)
+Evidence: image + markup + tokens (screen.png opened successfully — not markup-only).
+Reuse audit: checked live `src/shared/ui`, `src/features/*`, `src/entities/*`; `docs/context/repo-map.md` is stale (it omits the existing progress-*, app-shell and onboarding features).
+
+Design-token map (DESIGN.md name -> repo token): surface-container -> `--surface`; surface-container-lowest -> `--srf-container-lowest`; surface-container-high -> `--srf-container-high`; primary-container -> `--accent-volt`; secondary -> `--accent-teal`; tertiary-fixed-dim -> `--accent-amber`; on-surface -> `--text-high`; on-surface-variant -> `--text-muted`; outline-variant -> `--edge`. Components reference only `var(--...)` names.
+
+## Zones
+- App chrome header: fixed glass bar — logo, "Kinetix / Progress", "AI Composer · kimi-k3.1 online" status line, profile avatar.
+- Telemetry & horizon bar: volt status dot + "TELEMETRY STREAM" label, right-aligned M1/M2/M3 segmented control.
+- Page heading: "Performance & Volume" display heading + "Cycle: Hypertrophy 1.0" meta. (plain page markup, no component)
+- KPI grid: 2x2 metric cards — Monthly Volume, Sessions (14/16 + compliance bar), Est. 1RM Delta (two exercise rows), Avg Duration.
+- Compound target focus: section label, "Filter" text action, horizontally scrolling exercise chips (Incline Bench active; Weighted Pull-Up; Deadlift / RDL; Squat).
+- Exercise focus chart card: exercise title + "T1 Compound" badge + projected 1RM; legend; one combo chart (volume bars + 1RM area/line + points + grid + week labels); Latest Velocity & RPE strip (S1–S4).
+- Recent exercise logs: section label + "3 sessions recorded"; three dated rows with weight/reps and a volt PR accent on the newest.
+- AI agent insight: model header + confidence, insight prose, recommendation callout.
+- Form-score visual: cinematic gym image with bottom gradient, "Biomechanical Form Score 98 / 100" + caption.
+- Sync footer: teal dot + "SQLite DB synced via gym-gate" + "0 pending".
+- Bottom nav: My Plan / centered Workout FAB / Progress (active).
+
+## Components
+- `ProgressPage` — [Variant] — thin route composition of chrome + ordered sections (mock order: telemetry, heading, KPI, focus chips, chart card, logs, insight, form score, sync footer).
+  - data: composition only
+  - layer: `src/pages/ProgressPage.tsx` (existing; route only)
+  - tokens: `var(--sp-lg)` page gap
+- `AppChrome` — [Variant] — fixed header: brand/page title, AI composer status, profile avatar.
+  - states: idle
+  - data: composer status from `@entities/composer`; avatar from `@entities/profile` (asset unknown)
+  - layer: `src/features/app-shell/ui` (existing)
+  - tokens: `var(--surface-glass)`, `var(--shadow-glass-top)`, `var(--shell-bar-h)`, `var(--sp-gutter)`, `var(--font-heading)`, `var(--label-caps)`, `var(--accent-teal)`, `var(--accent-glow-teal)`, `var(--text-high)`, `var(--text-muted)`
+  - note: `AppShell` today exposes `title` + a `headerRight` node inside the brand stack; the mock needs a page-title suffix ("Progress") and a real top-right avatar slot — extend the shell (variant), do not fork it.
+- `ComposerStatusIndicator` — [Reuse] — dot + "AI Composer · kimi-k3.1 online".
+  - states: online / offline / unknown (existing mapping)
+  - data: `@entities/composer` status
+  - layer: `src/features/app-shell/ui` (existing)
+  - tokens: `var(--accent-teal)`, `var(--accent-glow-teal)`, `var(--label-caps)`, `var(--text-muted)`
+- `StatusIndicator` — [Variant] — generic dot + label; reused for the telemetry row and sync footer.
+  - states: idle (tone is a prop)
+  - data: none (props only)
+  - layer: `src/shared/ui/atoms` (existing)
+  - tokens: `var(--accent-volt)`, `var(--accent-glow-volt)`, `var(--text-muted)`, `var(--label-caps)`
+  - note: existing tones are positive/warning/muted (teal/amber/muted); the mock's volt telemetry dot needs a volt tone added — one tone, not a new atom.
+- `SegmentedControl` — [Variant] — M1/M2/M3 single-select inside a pill track.
+  - states: idle / selected
+  - data: active horizon id (semantics from card — see gaps)
+  - layer: `src/shared/ui/molecules` (extend existing `ChoiceChipGroup`)
+  - tokens: `var(--srf-container)`, `var(--accent-volt)`, `var(--canvas)`, `var(--text-muted)`, `var(--label-caps)`, `var(--r-pill)`, `var(--sp-xs)`
+  - note: `ChoiceChipGroup` already owns exactly-one selection; add a `variant="segmented"` presentation instead of a second selector component.
+- `TelemetryBar` — [New] — flex row placing the telemetry status and horizon control.
+  - states: idle
+  - data: active horizon (from card)
+  - layer: `src/features/progress-metrics/ui` (proposed)
+  - tokens: `var(--sp-xs)`, `var(--sp-sm)`, `var(--sp-md)`
+- `KpiGrid` — [New] — 2-column grid composing four `KpiCard`s.
+  - states: idle / loading / empty
+  - data: KPI values — several are not derivable from `@entities/session-log` (see gaps)
+  - layer: `src/features/progress-metrics/ui` (proposed)
+  - tokens: `var(--sp-sm)`
+- `KpiCard` — [Variant] — icon + label, main value + unit, optional footer slot; the four KPI shapes are one component.
+  - states: idle / loading / empty
+  - data: label, value, unit, footer (compliance bar / delta rows / timer meta) — scoping from card
+  - layer: `src/shared/ui/atoms/StatCard` (extend with `icon`, `unit`, `children`; backward-compatible) or promote to a molecule if footers grow
+  - tokens: `var(--surface)`, `var(--edge)`, `var(--r-card)`, `var(--sp-sm)`, `var(--sp-xs)`, `var(--text-high)`, `var(--text-muted)`, `var(--accent-volt)`, `var(--accent-teal)`, `var(--accent-amber)`, `var(--metric-lg-size)`, `var(--metric-lg-weight)`, `var(--font-metric)`, `var(--label-caps)`
+- `ProgressBar` — [New] — determinate compliance bar.
+  - states: value 0–100
+  - data: percentage (from card)
+  - layer: `src/shared/ui/atoms` (domain-free, reusable)
+  - tokens: `var(--srf-container-high)` track, `var(--accent-teal)` fill, `var(--r-pill)`
+- `KpiMetricRow` — [New] — label + signed delta row for the Est. 1RM card (two instances).
+  - states: idle
+  - data: exercise name, delta kg, tone (volt/teal)
+  - layer: `src/features/progress-metrics/ui` (proposed)
+  - tokens: `var(--text-high)`, `var(--text-muted)`, `var(--accent-volt)`, `var(--accent-teal)`, `var(--metric-md-size)`, `var(--label-caps)`
+- `FocusChipRow` — [Variant] — horizontally scrolling exercise-target chips, icon + label, active volt + glow.
+  - states: idle / selected / empty (no tracked exercises)
+  - data: tracked exercises from `@entities/session-log` `selectTrackedExercises`
+  - layer: `src/features/progress-exercise-focus/ui` (existing feature)
+  - tokens: `var(--accent-volt)`, `var(--canvas)`, `var(--surface-lifted)`, `var(--edge)`, `var(--accent-glow-volt)`, `var(--r-card)`, `var(--label-caps)`, `var(--sp-sm)`, `var(--sp-xs)`
+  - note: `ChoiceChipGroup` already renders single-select chips (fieldset + legend + wrapping pills); this variant adds an icon slot, rectangular chip and no-wrap horizontal scroll. Same selection contract.
+- `Button` — [Variant] — add a chrome-less "ghost" presentation for the "Filter" action (tune icon + label).
+  - states: idle / disabled
+  - data: none
+  - layer: `src/shared/ui/atoms` (existing)
+  - tokens: `var(--accent-volt)`, `var(--label-caps)`
+  - note: existing variants are primary/secondary only; icon can ride as `children`.
+- `ExerciseFocusChartCard` — [Variant] — one card: exercise header, T1 badge, projected 1RM, legend, combo chart, velocity/RPE strip.
+  - states: idle / empty (existing) / loading / error (not evidenced in mock)
+  - data: `ExerciseFocus` from `@entities/session-log` `selectExerciseFocus`; projected 1RM, velocity and RPE are NOT in the entity (gap)
+  - layer: `src/features/progress-exercise-focus/ui` (existing)
+  - tokens: `var(--surface)`, `var(--edge)`, `var(--r-card)`, `var(--sp-md)`, `var(--sp-sm)`, `var(--text-high)`, `var(--text-muted)`, `var(--accent-volt)`, `var(--accent-teal)`, `var(--srf-container-lowest)`, `var(--font-heading)`, `var(--label-caps)`
+  - note: replaces today's two-chart vertical stack with one combined card; keep the existing empty-state + composer CTA behavior.
+- `ComboChart` — [New] — one canvas: teal volume bars (back layer), volt area under the 1RM line, volt trendline + data points, horizontal grid guides, week tick labels.
+  - states: empty (no points → render nothing)
+  - data: bars (`label`, `value`), line points (`label`, `value`), unit, ariaLabel
+  - layer: `src/shared/ui/atoms` (domain-free: series in, chart out)
+  - tokens: `var(--accent-volt)`, `var(--accent-teal)`, `var(--edge)`, `var(--srf-container-lowest)`, `var(--text-muted)`, `var(--font-metric)`
+  - note: do not port the mock's hand-written SVG geometry. Existing charts are recharts atoms (`TrajectoryChart`, `RangeBandChart`) with aria-label-as-table; add one `ComposedChart` (Area + Bar + Line) atom and keep that accessibility convention.
+- `ChartLegend` — [New] — "1RM Trajectory" line swatch, "Volume (Sets × Load)" dot, "Peak: 85kg × 8".
+  - states: idle
+  - data: series names + peak (from card)
+  - layer: `src/features/progress-exercise-focus/ui`
+  - tokens: `var(--accent-volt)`, `var(--accent-teal)`, `var(--text-muted)`, `var(--label-caps)`
+  - note: keep feature-local; graduate to shared only if a second chart needs it.
+- `VelocityRpeStrip` — [New] — "Latest Velocity & RPE Profile (85kg Session)" header, mean, four tiles.
+  - states: idle / empty
+  - data: per-set velocity (m/s), RPE, top-set flag, session weight (not in entity — gap)
+  - layer: `src/features/progress-exercise-focus/ui` (kept next to the chart it explains)
+  - tokens: `var(--srf-container-high)`, `var(--srf-container-lowest)`, `var(--text-high)`, `var(--text-muted)`, `var(--accent-teal)`, `var(--accent-volt)`, `var(--label-caps)`, `var(--metric-md-size)`, `var(--r-card)`
+  - note: mean is teal; RPE labels shift teal -> volt as intensity rises; the top tile carries a volt ring.
+- `VelocitySetTile` — [New] — S# label, velocity, RPE; `top` prop for the highlighted final set.
+  - states: normal / top
+  - data: set number, velocity, rpe, top flag
+  - layer: `src/features/progress-exercise-focus/ui`
+  - tokens: `var(--srf-container-lowest)`, `var(--accent-volt)`, `var(--accent-teal)`, `var(--text-high)`, `var(--text-muted)`, `var(--label-caps)`, `var(--r-card)`
+  - note: four instances (S1–S4) of one component, not four components.
+- `HistoryLog` — [Variant] — section header gains a right-aligned session count ("3 sessions recorded").
+  - states: idle / empty (existing)
+  - data: rows from `@entities/session-log` selectors
+  - layer: `src/features/progress-history/ui` (existing)
+  - tokens: `var(--text-high)`, `var(--text-muted)`, `var(--label-caps)`, `var(--sp-sm)`
+- `HistoryLogRow` — [Variant] — date + "NEW PR" badge left, weight + reps right, volt accent bar on the PR row.
+  - states: with PR / without PR
+  - data: date, weight kg, top reps, sets count, RPE avg, rest seconds (RPE/rest/top-reps are not in the entity — gap)
+  - layer: `src/features/progress-history/ui` (existing)
+  - tokens: `var(--surface)`, `var(--edge)`, `var(--r-card)`, `var(--accent-volt)`, `var(--accent-glow-volt)`, `var(--text-high)`, `var(--text-muted)`, `var(--metric-md-size)`, `var(--metric-lg-size)`, `var(--label-caps)`
+  - note: today's row shows date/split/duration/sets; the mock drops split/duration and promotes weight/reps. Keep PR detection in the entity selectors (0 network requests).
+- `Badge` — [Variant] — optional leading icon; used for "NEW PR" (trophy) and "T1 Compound".
+  - states: volt / muted
+  - data: label, tone, optional icon
+  - layer: `src/shared/ui/atoms` (existing)
+  - tokens: `var(--accent-volt)`, `var(--surface-lifted)`, `var(--edge)`, `var(--r-pill)`, `var(--label-caps)`
+  - note: existing atom takes label + tone + title; the mock needs a small icon slot and a filled (not outlined) volt chip for T1.
+- `InsightCard` — [Variant] — model header + confidence, prose with strong lead, recommendation callout.
+  - states: pending (skeleton) / success / error (retry) / empty (all existing)
+  - data: `ReviewInsight` (prose + model) from `@entities/session-log`; confidence and recommendation are NOT in the review contract (gap)
+  - layer: `src/features/progress-insight/ui` (existing)
+  - tokens: `var(--srf-container-high)`, `var(--srf-container-lowest)`, `var(--accent-teal)`, `var(--accent-amber)`, `var(--text-high)`, `var(--text-muted)`, `var(--label-caps)`, `var(--r-card)`, `var(--sp-md)`
+  - note: the recommendation block is amber-tinted; there is no translucent amber-background token yet (gap).
+- `FormScoreCard` — [New] — image card with bottom gradient, score line, caption.
+  - states: idle / image missing
+  - data: score 98/100 + caption (no entity source — gap); background image asset (gap)
+  - layer: proposed `src/features/progress-form-score/ui` (or a presentational block inside `progress-insight`)
+  - tokens: `var(--srf-container-lowest)`, `var(--canvas)`, `var(--accent-teal)`, `var(--text-high)`, `var(--text-muted)`, `var(--r-card)`, `var(--label-caps)`, `var(--sp-sm)`
+  - note: the only decorative element on the screen; must not hotlink the mock's external image URL.
+- `SyncStatusFooter` — [New] — dot + "SQLite DB synced via gym-gate" + "0 pending".
+  - states: synced / pending>0 / offline
+  - data: sync state + pending count (source unknown — gap; composer entity exposes availability only)
+  - layer: `src/features/app-shell/ui` (chrome) via the `AppShell` footer slot
+  - tokens: `var(--srf-container-lowest)`, `var(--accent-teal)`, `var(--accent-glow-teal)`, `var(--text-muted)`, `var(--text-high)`, `var(--label-caps)`, `var(--r-card)`
+  - note: `AppShell` currently renders a plain `sessionStatus` footer; replace it through the slot (variant) rather than adding a second footer.
+- `BottomNav` — [Reuse] — My Plan / centered Workout FAB / Progress (active).
+  - states: active tab per route
+  - data: route (`useLocation`)
+  - layer: `src/features/app-shell/ui` (existing)
+  - tokens: `var(--surface-glass)`, `var(--shadow-glass-bottom)`, `var(--accent-volt)`, `var(--accent-glow-volt)`, `var(--text-muted)`, `var(--label-caps)`
+  - note: already matches the mock (three slots, raised FAB, volt active tab) — no change required.
+
+## Antipatterns
+- Four KPI cards -> one `KpiCard` (StatCard variant) + four config entries, never four components.
+- Four velocity tiles -> one `VelocitySetTile` with a `top` prop, never S1–S4 components.
+- Do not add a second pill selector: the horizon (M1/M2/M3) and exercise focus chips both reuse `ChoiceChipGroup`/`ToggleChip` semantics — two variants, one owner of single-select.
+- Do not re-implement the mock's hand-written inline SVG; the repo's charts are recharts atoms with an aria-label-as-table — add ONE `ComboChart` atom.
+- Do not create a second history list or second insight card; extend `HistoryLogRow` / `InsightCard`.
+- Do not copy values out of DESIGN.md into components; map names to the repo token system (the palettes differ — see gaps).
+- Do not put logo/avatar/status logic in `shared/ui`; chrome stays in `features/app-shell`, data in entities.
+- Do not scope "Recent Exercise Logs" to the active chip inside the UI layer without a card rule — the selector/entity decides.
+
+## Knowledge gaps
+- KNOWLEDGE GAP: palette drift — DESIGN.md's primary-container / secondary / tertiary-fixed-dim values do not equal the repo's `--accent-volt` / `--accent-teal` / `--accent-amber`. Which is authoritative for this screen?
+- KNOWLEDGE GAP: typography scale is not tokenized — `tokens.css` has `--label-caps` and metric sizes only; the mock's 32px H1, 18px card titles and 12–14px body have no `var(--...)`. Token additions or inline sizes needed (sizes are not color-gated).
+- KNOWLEDGE GAP: missing data in `@entities/session-log` — per-set velocity (m/s), RPE, rest intervals, top-set reps, the "NEW PR" flag (only e1RM PRs are computed), monthly volume, sessions target 14/16, compliance %, avg duration, per-exercise 1RM deltas, projected 1RM 106.2 (+4.9%), biomechanical score 98/100, sync pending count. Entity extension or task-card fixtures required.
+- KNOWLEDGE GAP: the screen OMITS the existing Progress page surfaces — `PlanDisclaimer`, `PlanRecompose` (composer prompt), `HistoryTable` and the "Compact" toggle are absent. Full replacement, or an additional section/tab? Removing them breaks existing behavior/tests.
+- KNOWLEDGE GAP: M1/M2/M3 semantics — months, mesocycles, or views? How the active horizon changes every KPI and the chart is unknown.
+- KNOWLEDGE GAP: the card says "4-Week 1RM Velocity & Load Dispersion" but the x-axis shows WK 41–45 (five labels). Is WK 41 a base anchor and 42–45 the four data weeks?
+- KNOWLEDGE GAP: chart interactivity — the mock is a static SVG; the repo pattern adds recharts tooltips and aria-labels. Are hover/tooltips and week selection expected?
+- KNOWLEDGE GAP: assets — logo, profile avatar (external mock URLs) and the gym texture are not in the repo. Ship local files, or keep the current text "Kinetix" header and drop the texture?
+- KNOWLEDGE GAP: icon system — mock uses Material Symbols; the repo has one inline bolt SVG. Which icon set/asset path for fitness_center, speed, timer, tune, emoji_events, smart_toy, verified?
+- KNOWLEDGE GAP: empty/loading/error visuals for the KPI grid, chart card, velocity strip, form-score card and sync footer are not shown. Reuse `Skeleton` / `EmptyState` / `AlertBanner` conventions?
+- KNOWLEDGE GAP: the "Filter" action's target — exercise picker, date range, or tags? Behavior comes from the task card.
+- KNOWLEDGE GAP: units — kg only, or an lb toggle? All mock values are kg.
+- KNOWLEDGE GAP: is "Recent Exercise Logs" scoped to the active exercise or session-wide? Weights/count suggest the active exercise, but the entity log is session-wide.
+- KNOWLEDGE GAP: "Proj. 1RM (+4.9%)" formula and source — computed client-side like PRs, or returned by the gym-gate?
+- KNOWLEDGE GAP: AI confidence 94.2% and the recommendation line are not in `docs/contracts/progress-insight.md` (`ReviewInsight` carries periodId/model/insight only). Contract change or display-only?
+- KNOWLEDGE GAP: the footer claims SQLite/gym-gate sync, but the repo serves a static sample (`getSessionLog`). Real status or decorative copy?
+- KNOWLEDGE GAP: the PR row mixes an RPE-based "NEW PR" with the entity's e1RM PR model — which definition drives the accent and badge?
+- KNOWLEDGE GAP: desktop/tablet behavior — the mock is `mobile_tab` only; breakpoints for the 2x2 KPI grid, chart card and horizontal chips are unknown.

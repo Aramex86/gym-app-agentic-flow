@@ -30,6 +30,7 @@ export const readEvents = (file) => {
 // Aggregate one month. Returns per-run rows + totals + verdicts.
 export const sheet = (m = month()) => {
   const rows = [];
+  let ledgerErr = null;
   try {
     for (const d of readdirSync(runsBase()).sort()) {
       const p = join(runsBase(), d, 'trace.jsonl');
@@ -53,14 +54,21 @@ export const sheet = (m = month()) => {
       if (inMonth.some((e) => e.event === 'hop_end' || e.event === 'hop_usage' || e.event === 'hop_rail2_cost')) rows.push(row);
     }
   } catch (err) {
-    return { runs: [], err: String(err && err.message || err) };
+    const msg = String(err && err.message || err);
+    // A fresh machine has no trace directory yet — that is a month with
+    // ZERO runs ($0.00), not an unreadable ledger (combat 26.11: doctor
+    // printed a false "ledger unreadable (ENOENT/ENOTDIR)" on every run).
+    // Only a genuinely broken ledger (permission, corrupt data) stays an
+    // honest error — distinguish by the OS error code, not by string vibes.
+    if (!/ENOENT|ENOTDIR/.test(msg)) return { runs: [], err: msg };
+    ledgerErr = `fresh ledger (${msg}) - 0 runs this month`;
   }
   const totals = rows.reduce((a, r) => ({
     inTok: a.inTok + r.inTok, outTok: a.outTok + r.outTok,
     usd: a.usd + r.usd, premium: a.premium + r.premium,
     costUnknown: a.costUnknown || r.costUnknown, runs: a.runs + 1,
   }), { inTok: 0, outTok: 0, usd: 0, premium: 0, costUnknown: false, runs: 0 });
-  return { runs: rows, totals, cap: capOf(), month: m };
+  return { runs: rows, totals, cap: capOf(), month: m, ledgerErr };
 };
 
 // The circuit breaker. Call BEFORE spawning hops. Returns null (go) or an
